@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <title>TripLog</title>
+    <meta name="description" content="Truck Driver Trip & Expense Logger" />
+
+    <!-- PWA: Makes it installable on iPhone home screen -->
+    <link rel="manifest" href="/triplog/manifest.json" />
+
+    <!-- iOS specific PWA tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TripLog" />
+
+    <!-- iOS icons - Safari uses these when adding to home screen -->
+    <link rel="apple-touch-icon" href="/triplog/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/triplog/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/triplog/icons/icon-192.png" />
+
+    <!-- Theme color - colors the Safari browser bar -->
+    <meta name="theme-color" content="#1E40AF" />
+    <meta name="msapplication-TileColor" content="#1E40AF" />
+
+    <!-- Prevent phone number auto-detection -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <style>
+      /* Splash screen while app loads */
+      body { background: #1E40AF; }
+      #splash {
+        position: fixed; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: #1E40AF; z-index: 9999;
+        transition: opacity 0.4s ease;
+      }
+      #splash.hidden { opacity: 0; pointer-events: none; }
+      #splash-icon { font-size: 72px; margin-bottom: 16px; }
+      #splash-title { color: #fff; font-size: 28px; font-weight: 800;
+        font-family: -apple-system, sans-serif; }
+      #splash-sub { color: rgba(255,255,255,.7); font-size: 14px;
+        margin-top: 8px; font-family: -apple-system, sans-serif; }
+    </style>
+    <script type="module" crossorigin src="/triplog/assets/index-1Ao1PKvO.js"></script>
+    <link rel="stylesheet" crossorigin href="/triplog/assets/index-C_dsVkcx.css">
+  </head>
+  <body>
+    <!-- Splash screen shown while React loads -->
+    <div id="splash">
+      <div id="splash-icon">🚛</div>
+      <div id="splash-title">TripLog</div>
+      <div id="splash-sub">Trip & Expense Manager</div>
+    </div>
+
+    <div id="root"></div>
+
+    <script>
+      // Hide splash once React has rendered
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const splash = document.getElementById('splash');
+          if (splash) {
+            splash.classList.add('hidden');
+            setTimeout(() => splash.remove(), 500);
+          }
+        }, 600);
+      });
+    </script>
+  </body>
+</html>
