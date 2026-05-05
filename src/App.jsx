@@ -60,39 +60,45 @@ const INIT_EXPENSES = [];
 
 // ═══════════════════════════ UTILS ═══════════════════════════════
 // Haversine — kept only as last-resort fallback, never shown to user as primary
+// ─── Distance calculation ─────────────────────────────────────────
+// Haversine formula → straight-line miles between two lat/lon points
 function _airMiles(la1,lo1,la2,lo2){
   const R=3959,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;
   const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
-  return(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// Driving distance via Claude API — returns {miles, km} or null on failure
-const _distCache={};
-async function getDrivingDist(origin,destination){
-  const key=`${origin}|${destination}`;
-  if(_distCache[key])return _distCache[key];
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:60,
-        messages:[{role:'user',content:`What is the driving distance by road between "${origin}" and "${destination}"? Reply ONLY with a JSON object like {"miles":342.5,"km":551.2} using realistic highway driving distance. No other text.`}]
-      })
-    });
-    const d=await res.json();
-    const txt=((d.content||[]).find(b=>b.type==='text')||{}).text||'';
-    const clean=txt.replace(/```[a-z]*\n?/gi,'').trim();
-    const obj=JSON.parse(clean);
-    if(typeof obj.miles==='number'&&typeof obj.km==='number'){
-      _distCache[key]=obj;
-      _distCache[`${destination}|${origin}`]=obj; // bidirectional
-      return obj;
-    }
-  }catch{}
-  return null;
+// Smart road-factor driving distance — works fully offline on any device.
+// Road factor = how much longer real driving is vs straight line.
+function getDrivingDist(origin,destination,oLat,oLon,dLat,dLon){
+  const air=_airMiles(oLat,oLon,dLat,dLon);
+
+  // Base factor by distance range
+  let factor;
+  if(air<10)       factor=1.45; // city streets, lots of turns
+  else if(air<30)  factor=1.35; // short urban hop
+  else if(air<80)  factor=1.28; // regional mix of highway and local
+  else if(air<200) factor=1.22; // medium highway run
+  else if(air<500) factor=1.18; // long haul mostly interstate
+  else             factor=1.15; // very long haul efficient corridors
+
+  const latDiff=Math.abs((oLat||0)-(dLat||0));
+  const lonDiff=Math.abs((oLon||0)-(dLon||0));
+
+  // Alberta Queen Elizabeth II highway — extremely straight, very close to air distance
+  const bothAB=(oLon>-118&&oLon<-110&&dLon>-118&&dLon<-110&&oLat>49&&dLat>49);
+  if(bothAB&&air>100) factor=Math.max(factor-0.08,1.05);
+
+  // Mountain/coastal detour — large lon gap, small lat gap (e.g. east-west through Rockies)
+  if(lonDiff>8&&latDiff<5) factor+=0.04;
+  // North-south through mountain ranges
+  if(latDiff>6&&lonDiff<4) factor+=0.03;
+
+  const miles=air*factor;
+  const km=miles*1.60934;
+  return{miles:parseFloat(miles.toFixed(1)),km:parseFloat(km.toFixed(1))};
 }
+
 function curMonth(){const n=new Date();return`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;}
 function fmtC(v){return'$'+v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
 function isCAUSA(country,state){
@@ -717,7 +723,6 @@ function AddTripModal({visible,onClose,onSave,editTrip,T,vehicles}){
   const [dC,setDC]=useState(null);
   const [gps,setGps]=useState(false);
   const [distCalced,setDistCalced]=useState(false);
-  const [distLoading,setDistLoading]=useState(false);
 
   useEffect(()=>{
     if(!visible)return;
@@ -725,25 +730,17 @@ function AddTripModal({visible,onClose,onSave,editTrip,T,vehicles}){
       setF({trip_number:editTrip.trip_number||'',origin:editTrip.origin||'',destination:editTrip.destination||'',distance:String(editTrip.distance||''),trip_date:editTrip.trip_date||'',notes:editTrip.notes||'',status:editTrip.status||'In Progress',trip_rate:String(editTrip.trip_rate||''),rate_type:editTrip.rate_type||'per_mile',currency:editTrip.currency||'CAD',vehicle_id:editTrip.vehicle_id||''});
       setOC(editTrip.origin_lat?{lat:editTrip.origin_lat,lon:editTrip.origin_lon}:null);
       setDC(editTrip.dest_lat?{lat:editTrip.dest_lat,lon:editTrip.dest_lon}:null);
-      setDistCalced(false);setDistLoading(false);
-    }else{setF(blank);setOC(null);setDC(null);setDistCalced(false);setDistLoading(false);}
+      setDistCalced(false);
+    }else{setF(blank);setOC(null);setDC(null);setDistCalced(false);}
   },[visible,editTrip]);
 
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
 
-  async function computeDriving(originLabel,destLabel,oCoord,dCoord){
-    setDistLoading(true);setDistCalced(false);
-    const result=await getDrivingDist(originLabel,destLabel);
+  function computeDriving(originLabel,destLabel,oCoord,dCoord){
+    const result=getDrivingDist(originLabel,destLabel,oCoord.lat,oCoord.lon,dCoord.lat,dCoord.lon);
+    s('distance',result.miles.toFixed(1));
+    setDistCalced({miles:result.miles,km:result.km,mode:'driving'});
     setDistLoading(false);
-    if(result){
-      s('distance',result.miles.toFixed(1));
-      setDistCalced({miles:result.miles,km:result.km,mode:'driving'});
-    }else{
-      // fallback to air miles if API fails
-      const air=_airMiles(oCoord.lat,oCoord.lon,dCoord.lat,dCoord.lon);
-      s('distance',air.toFixed(1));
-      setDistCalced({miles:air,km:air*1.60934,mode:'air'});
-    }
   }
 
   const onOS=c=>{
@@ -845,20 +842,13 @@ function AddTripModal({visible,onClose,onSave,editTrip,T,vehicles}){
       {gpsBtn('destination')}
 
       <Lbl c="Distance" T={T}/>
-      {distLoading?(
-        <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:'12px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:16,height:16,border:`2px solid ${T.border}`,borderTopColor:'#059669',borderRadius:'50%',animation:'_sp .65s linear infinite',flexShrink:0}}/>
-          <span style={{fontSize:13,color:T.textSec}}>Calculating driving distance…</span>
-        </div>
-      ):distCalced&&f.distance?(
-        <div style={{background: distCalced.mode==='driving'?'#ECFDF5':'#FFFBEB',border:`1px solid ${distCalced.mode==='driving'?'#6EE7B7':'#FCD34D'}`,borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
-          <span style={{fontSize:16}}>{distCalced.mode==='driving'?'🛣️':'⚠️'}</span>
+      {distCalced&&f.distance?(
+        <div style={{background:'#ECFDF5',border:'1px solid #6EE7B7',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:16}}>🛣️</span>
           <div style={{flex:1}}>
-            <span style={{fontSize:15,fontWeight:700,color:distCalced.mode==='driving'?'#059669':'#D97706'}}>{parseFloat(f.distance).toFixed(1)} miles</span>
+            <span style={{fontSize:15,fontWeight:700,color:'#059669'}}>{parseFloat(f.distance).toFixed(1)} miles</span>
             <span style={{fontSize:12,color:'#555',marginLeft:8}}>({distCalced.km.toFixed(1)} km)</span>
-            <div style={{fontSize:11,color:distCalced.mode==='driving'?'#065F46':'#92400E',marginTop:2}}>
-              {distCalced.mode==='driving'?'🚛 Estimated driving distance':'⚠️ Straight-line estimate — driving route unavailable'}
-            </div>
+            <div style={{fontSize:11,color:'#065F46',marginTop:2}}>🚛 Estimated driving distance</div>
           </div>
           <button onClick={()=>{setDistCalced(false);s('distance','');}} style={{background:'none',border:'none',color:'#64748B',cursor:'pointer',fontSize:11,whiteSpace:'nowrap'}}>Edit</button>
         </div>
