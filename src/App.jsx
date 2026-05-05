@@ -1632,10 +1632,30 @@ function TabBar({active,onPress,T}){
     {k:'Settings',i:'⚙️',l:'Settings'},
   ];
   return(
-    <div style={{display:'flex',background:T.card,borderTop:`1px solid ${T.border}`,boxShadow:'0 -2px 12px rgba(0,0,0,.08)',flexShrink:0,zIndex:50}}>
+    <div style={{
+      display:'flex',
+      background:T.card,
+      borderTop:`1px solid ${T.border}`,
+      boxShadow:'0 -2px 12px rgba(0,0,0,.08)',
+      flexShrink:0,
+      zIndex:50,
+      paddingBottom:'env(safe-area-inset-bottom)',
+    }}>
       {tabs.map(tab=>(
         <button key={tab.k} onClick={()=>onPress(tab.k)}
-          style={{flex:1,padding:'10px 0 8px',border:'none',background:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          style={{
+            flex:1,
+            paddingTop:10,
+            paddingBottom:8,
+            border:'none',
+            background:'none',
+            cursor:'pointer',
+            display:'flex',
+            flexDirection:'column',
+            alignItems:'center',
+            gap:2,
+            minHeight:56,
+          }}>
           <span style={{fontSize:22}}>{tab.i}</span>
           <span style={{fontSize:10,fontWeight:600,color:active===tab.k?T.primary:'#94A3B8'}}>{tab.l}</span>
         </button>
@@ -1664,7 +1684,19 @@ function AppInner(){
   function goBack(){if(stack.length>1)setStack(p=>p.slice(0,-1));}
 
   return(
-    <div style={{width:'100%',height:'100vh',display:'flex',flexDirection:'column',fontFamily:"'Segoe UI',system-ui,sans-serif",maxWidth:430,margin:'0 auto',background:T.bg,overflow:'hidden',position:'relative'}}>
+    <div style={{
+      width:'100%',
+      height:'100dvh',
+      display:'flex',
+      flexDirection:'column',
+      fontFamily:"'Segoe UI',system-ui,sans-serif",
+      maxWidth:430,
+      margin:'0 auto',
+      background:T.bg,
+      overflow:'hidden',
+      position:'relative',
+      paddingTop:'env(safe-area-inset-top)',
+    }}>
       <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         {cur==='Dashboard'  && <Dashboard  trips={trips} expenses={expenses} navigate={nav}/>}
         {cur==='Trips'      && <Trips      trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles}/>}
