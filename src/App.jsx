@@ -893,14 +893,18 @@ return(
 <span style={{fontSize:10,color:T.textSec}}>Completed trips only</span>
 </div>
 <StatGrid>
-<SC bg="#7C3AED" icon="🛣️" value={`${mMi.toFixed(1)} ${distUnit}`} label="Miles Driven"/>
-<SC bg="#059669" icon="⛽" value={mEcoDisplay} label={useLiters?'Fuel Economy (L/100)':'Fuel Economy (MPG)'} subLabel={mEcoSub}/>
-<SC bg="#0891B2" icon="📈" value={`$${mRev.toFixed(0)}`} label="Revenue"/>
-<SC bg={profit>=0?'#059669':'#DC2626'} icon="🏦" value={`$${profit.toFixed(0)}`} label="Profit / Loss"/>
-<SC bg="#DC2626" icon="💳" value={`$${mEx.toFixed(0)}`} label="Total Expenses"/>
-<SC bg="#D97706" icon="⛽" value={`$${mFuel.toFixed(0)}`} label="Fuel Spent"/>
+{/* Row 1 — Blue: Trips | Receipts */}
 <SC bg="#1E40AF" icon="🗺️" value={String(mTAll.length)} label="Trips This Month"/>
-<SC bg="#6366F1" icon="🧾" value={String(mE.length)} label="Receipts Logged"/>
+<SC bg="#2563EB" icon="🧾" value={String(mE.length)} label="Receipts Logged"/>
+{/* Row 2 — Red: Expenses | Fuel Spent */}
+<SC bg="#DC2626" icon="💳" value={`$${mEx.toFixed(0)}`} label="Total Expenses"/>
+<SC bg="#EF4444" icon="⛽" value={`$${mFuel.toFixed(0)}`} label="Fuel Spent"/>
+{/* Row 3 — Yellow: Fuel Economy | Miles */}
+<SC bg="#D97706" icon="⛽" value={mEcoDisplay} label={useLiters?'Fuel Econ (L/100)':'Fuel Econ (MPG)'} subLabel={mEcoSub}/>
+<SC bg="#F59E0B" icon="🛣️" value={`${mMi.toFixed(1)} ${distUnit}`} label="Miles Driven"/>
+{/* Row 4 — Green: Revenue | Profit */}
+<SC bg="#059669" icon="📈" value={`$${mRev.toFixed(0)}`} label="Revenue"/>
+<SC bg={profit>=0?'#10B981':'#DC2626'} icon="🏦" value={`$${profit.toFixed(0)}`} label="Profit / Loss"/>
 </StatGrid>
 
 {/* ── ALL TIME — 2 per row ── */}
@@ -909,14 +913,18 @@ return(
 <span style={{fontSize:10,color:T.textSec}}>Completed trips only</span>
 </div>
 <StatGrid>
+{/* Row 1 — Blue: All Trips | Completed */}
 <SC bg="#1E40AF" icon="🗺️" value={String(trips.length)} label="All Trips"/>
 <SC bg="#2563EB" icon="✅" value={String(comp)} label="Completed"/>
-<SC bg="#0891B2" icon="📊" value={fmtC(tRev)} label="Total Revenue"/>
-<SC bg={tProfit>=0?'#059669':'#DC2626'} icon="💰" value={fmtC(tProfit)} label="Total Profit/Loss"/>
+{/* Row 2 — Red: Total Cost | Fuel Cost */}
 <SC bg="#DC2626" icon="💳" value={fmtC(tEx)} label="Total Cost"/>
-<SC bg="#7C3AED" icon="🛣️" value={`${tMi.toFixed(0)} ${distUnit}`} label={useKm?'Total Km':'Total Miles'}/>
-<SC bg="#D97706" icon="⛽" value={fmtC(tFuel)} label="Fuel Cost"/>
-<SC bg="#6366F1" icon="🧾" value={String(expenses.length)} label="All Expenses"/>
+<SC bg="#EF4444" icon="⛽" value={fmtC(tFuel)} label="Fuel Cost"/>
+{/* Row 3 — Yellow: Total Miles | All Expenses */}
+<SC bg="#D97706" icon="🛣️" value={`${tMi.toFixed(0)} ${distUnit}`} label={useKm?'Total Km':'Total Miles'}/>
+<SC bg="#F59E0B" icon="🧾" value={String(expenses.length)} label="All Expenses"/>
+{/* Row 4 — Green: Revenue | Profit/Loss */}
+<SC bg="#059669" icon="📊" value={fmtC(tRev)} label="Total Revenue"/>
+<SC bg={tProfit>=0?'#10B981':'#DC2626'} icon="💰" value={fmtC(tProfit)} label="Total Profit/Loss"/>
 </StatGrid>
 
 {/* Recent Trips */}
@@ -1026,15 +1034,45 @@ return(
 );
 }
 
+// ═══════════════════════════ POD FULLSCREEN VIEWER ═══════════════
+function PodViewer({pod,onClose,T}){
+if(!pod)return null;
+return(
+<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.95)',zIndex:900,display:'flex',flexDirection:'column'}} onClick={onClose}>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'16px 20px',flexShrink:0}}>
+<div>
+<div style={{fontSize:14,fontWeight:700,color:'#fff'}}>POD — {pod.label||'Proof of Delivery'}</div>
+<div style={{fontSize:11,color:'rgba(255,255,255,.55)',marginTop:2}}>{pod.date}</div>
+</div>
+<button onClick={onClose} style={{background:'rgba(255,255,255,.15)',border:'none',color:'#fff',borderRadius:8,width:36,height:36,fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
+</div>
+<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:16,overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+<img src={pod.data} alt="POD" style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:12}}/>
+</div>
+</div>
+);
+}
+
 // ═══════════════════════════ TRIP DETAIL ═════════════════════════
-function TripDetail({tripId,trips,expenses,setExpenses,goBack}){
+function TripDetail({tripId,trips,expenses,setExpenses,pods,setPods,goBack}){
 const {T}=useT();
+const [activeTab,setActiveTab]=useState('expenses'); // 'expenses' | 'pods'
 const [show,setShow]=useState(false);
 const [editE,setEditE]=useState(null);
 const [confirmExpId,setConfirmExpId]=useState(null);
+const [viewPod,setViewPod]=useState(null);
+const [confirmPodId,setConfirmPodId]=useState(null);
+const [uploading,setUploading]=useState(false);
+const [podLabel,setPodLabel]=useState('');
+const [showLabelInput,setShowLabelInput]=useState(false);
+const [pendingFile,setPendingFile]=useState(null);
+const fileRef=useRef(null);
+
 const trip=useMemo(()=>trips.find(t=>t.id===tripId)||null,[trips,tripId]);
 const tExp=useMemo(()=>expenses.filter(e=>e.trip_id===tripId),[expenses,tripId]);
+const tPods=useMemo(()=>pods.filter(p=>p.trip_id===tripId).sort((a,b)=>b.id-a.id),[pods,tripId]);
 const total=useMemo(()=>tExp.reduce((s,e)=>s+(parseFloat(e.amount)||0),0),[tExp]);
+
 const fuelEconomy=useMemo(()=>{
 const fuelExp=tExp.filter(e=>e.expense_type==='Fuel'&&parseFloat(e.quantity)>0);
 const dist=parseFloat(trip?.distance)||0;
@@ -1044,53 +1082,116 @@ const totalGallons=totalLiters/3.78541;
 const distKm=dist*1.60934;
 return{mpg:totalGallons>0?(dist/totalGallons).toFixed(2):null,l100:distKm>0?((totalLiters/distKm)*100).toFixed(2):null,kpl:totalLiters>0?(distKm/totalLiters).toFixed(2):null,totalLiters:totalLiters.toFixed(1),totalGallons:totalGallons.toFixed(2)};
 },[tExp,trip]);
+
 function saveE(data){if(editE)setExpenses(es=>es.map(e=>e.id===editE.id?{...e,...data}:e));else setExpenses(es=>[...es,{...data,id:Date.now()}]);setShow(false);setEditE(null);}
 function delE(id){setExpenses(es=>es.filter(e=>e.id!==id));setConfirmExpId(null);}
+
+// ── POD upload: pick file → preview label input → save ──
+function handleFileChange(e){
+const file=e.target.files?.[0];
+if(!file)return;
+setUploading(true);
+const reader=new FileReader();
+reader.onload=ev=>{
+setPendingFile({data:ev.target.result,name:file.name});
+setPodLabel('');
+setShowLabelInput(true);
+setUploading(false);
+};
+reader.onerror=()=>setUploading(false);
+reader.readAsDataURL(file);
+// reset input so same file can be re-selected
+e.target.value='';
+}
+
+function savePod(){
+if(!pendingFile)return;
+const now=new Date();
+const dateStr=now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+setPods(ps=>[...ps,{
+id:Date.now(),
+trip_id:tripId,
+data:pendingFile.data,
+label:podLabel.trim()||'POD',
+date:dateStr,
+}]);
+setPendingFile(null);
+setPodLabel('');
+setShowLabelInput(false);
+}
+
+function cancelPod(){setPendingFile(null);setPodLabel('');setShowLabelInput(false);}
+function delPod(id){setPods(ps=>ps.filter(p=>p.id!==id));setConfirmPodId(null);}
+
 const d=trip||{origin:'Origin City',destination:'Destination City',trip_date:'N/A',distance:0,status:'In Progress'};
+
 return(
 <div style={{flex:1,display:'flex',flexDirection:'column',background:T.bg,overflow:'hidden'}}>
-<div style={{background:STATUS_COLORS[d.status]||T.primary,padding:'16px 20px 24px',flexShrink:0}}>
-<div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+
+{/* ── Fullscreen POD viewer ── */}
+<PodViewer pod={viewPod} onClose={()=>setViewPod(null)} T={T}/>
+
+{/* ── Header ── */}
+<div style={{background:STATUS_COLORS[d.status]||T.primary,padding:'16px 20px 20px',flexShrink:0}}>
+<div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
 <button onClick={goBack} style={{background:'none',border:'none',color:'#fff',fontSize:26,cursor:'pointer',padding:4,lineHeight:1}}>←</button>
 <span style={{fontSize:20,fontWeight:700,color:'#fff',flex:1}}>Trip Details</span>
 </div>
-<div style={{background:'rgba(255,255,255,.12)',borderRadius:16,padding:16}}>
-{d.trip_number&&<div style={{fontSize:12,fontWeight:800,color:'rgba(255,255,255,.65)',textTransform:'uppercase',letterSpacing:1.2,marginBottom:8}}>Trip # {d.trip_number}</div>}
-<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+<div style={{background:'rgba(255,255,255,.12)',borderRadius:16,padding:14}}>
+{d.trip_number&&<div style={{fontSize:11,fontWeight:800,color:'rgba(255,255,255,.65)',textTransform:'uppercase',letterSpacing:1.2,marginBottom:6}}>Trip # {d.trip_number}</div>}
+<div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
 <span style={{color:'rgba(255,255,255,.8)'}}>📍</span>
-<span style={{fontSize:16,fontWeight:600,color:'#fff',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.origin||'N/A'}</span>
+<span style={{fontSize:15,fontWeight:600,color:'#fff',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.origin||'N/A'}</span>
 <span style={{color:'rgba(255,255,255,.6)'}}>→</span>
-<span style={{fontSize:16,fontWeight:600,color:'#fff',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.destination||'N/A'}</span>
+<span style={{fontSize:15,fontWeight:600,color:'#fff',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.destination||'N/A'}</span>
 </div>
 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-<span style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>📅 {d.trip_date||'N/A'}</span>
-<span style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>🛣️ {d.distance||0} mi</span>
+<span style={{fontSize:12,color:'rgba(255,255,255,.85)'}}>📅 {d.trip_date||'N/A'}</span>
+<span style={{fontSize:12,color:'rgba(255,255,255,.85)'}}>🛣️ {d.distance||0} mi</span>
 <div style={{background:'rgba(255,255,255,.2)',borderRadius:10,padding:'2px 10px'}}><span style={{color:'#fff',fontSize:11,fontWeight:700}}>{d.status||'Active'}</span></div>
 </div>
 </div>
 </div>
-<div style={{display:'flex',margin:'16px 16px 8px',gap:8}}>
-<div style={{flex:1,background:'#EFF6FF',borderRadius:12,padding:14,textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:T.primary}}>{tExp.length}</div><div style={{fontSize:12,color:'#64748B',marginTop:2}}>Expenses</div></div>
-<div style={{flex:2,background:'#FEF2F2',borderRadius:12,padding:14,textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:'#DC2626'}}>${total.toFixed(2)}</div><div style={{fontSize:12,color:'#64748B',marginTop:2}}>Total Trip Cost</div></div>
+
+{/* ── Summary bar ── */}
+<div style={{display:'flex',margin:'12px 16px 0',gap:8}}>
+<div style={{flex:1,background:'#EFF6FF',borderRadius:12,padding:'10px 14px',textAlign:'center'}}><div style={{fontSize:20,fontWeight:800,color:T.primary}}>{tExp.length}</div><div style={{fontSize:11,color:'#64748B',marginTop:1}}>Expenses</div></div>
+<div style={{flex:1,background:'#FEF2F2',borderRadius:12,padding:'10px 14px',textAlign:'center'}}><div style={{fontSize:20,fontWeight:800,color:'#DC2626'}}>${total.toFixed(0)}</div><div style={{fontSize:11,color:'#64748B',marginTop:1}}>Trip Cost</div></div>
+<div style={{flex:1,background:'#F0FDF4',borderRadius:12,padding:'10px 14px',textAlign:'center'}}><div style={{fontSize:20,fontWeight:800,color:'#059669'}}>{tPods.length}</div><div style={{fontSize:11,color:'#64748B',marginTop:1}}>PODs</div></div>
 </div>
-<div style={{margin:'0 16px 8px',background:'#FEF3C7',borderRadius:12,padding:14}}>
+
+{/* ── Tab switcher ── */}
+<div style={{display:'flex',margin:'12px 16px 0',background:T.card,borderRadius:12,padding:4,gap:4,border:`1px solid ${T.border}`}}>
+{[['expenses','🧾 Expenses'],['pods','📄 PODs']].map(([k,l])=>(
+<button key={k} onClick={()=>setActiveTab(k)} style={{flex:1,padding:'9px 0',borderRadius:9,border:'none',background:activeTab===k?T.primary:'transparent',color:activeTab===k?'#fff':T.textSec,fontWeight:700,fontSize:13,cursor:'pointer',transition:'all .15s'}}>
+{l}{k==='pods'&&tPods.length>0?` (${tPods.length})`:''}
+</button>
+))}
+</div>
+
+{/* ══════════ EXPENSES TAB ══════════ */}
+{activeTab==='expenses'&&(<>
+<div style={{margin:'10px 16px 8px',background:'#FEF3C7',borderRadius:12,padding:12}}>
 {fuelEconomy?(
 <>
 <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:.8,marginBottom:8}}>⛽ Fuel Economy</div>
-<div style={{display:'flex',gap:8}}>
-<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:'#D97706'}}>{fuelEconomy.mpg}</div><div style={{fontSize:11,color:'#92400E',fontWeight:600,marginTop:2}}>MPG</div><div style={{fontSize:10,color:'#B45309',marginTop:1}}>miles per gallon</div></div>
-<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:'#D97706'}}>{fuelEconomy.l100}</div><div style={{fontSize:11,color:'#92400E',fontWeight:600,marginTop:2}}>L/100km</div><div style={{fontSize:10,color:'#B45309',marginTop:1}}>liters per 100 km</div></div>
-<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'10px 12px',textAlign:'center'}}><div style={{fontSize:22,fontWeight:800,color:'#D97706'}}>{fuelEconomy.kpl}</div><div style={{fontSize:11,color:'#92400E',fontWeight:600,marginTop:2}}>km/L</div><div style={{fontSize:10,color:'#B45309',marginTop:1}}>kilometers per liter</div></div>
+<div style={{display:'flex',gap:6}}>
+<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'#D97706'}}>{fuelEconomy.mpg}</div><div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:1}}>MPG</div></div>
+<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'#D97706'}}>{fuelEconomy.l100}</div><div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:1}}>L/100km</div></div>
+<div style={{flex:1,background:'rgba(255,255,255,.6)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}><div style={{fontSize:18,fontWeight:800,color:'#D97706'}}>{fuelEconomy.kpl}</div><div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:1}}>km/L</div></div>
 </div>
-<div style={{marginTop:8,fontSize:11,color:'#92400E',textAlign:'center'}}>{fuelEconomy.totalLiters} L ({fuelEconomy.totalGallons} gal) used over {d.distance} miles</div>
+<div style={{marginTop:6,fontSize:10,color:'#92400E',textAlign:'center'}}>{fuelEconomy.totalLiters} L ({fuelEconomy.totalGallons} gal) over {d.distance} mi</div>
 </>
 ):(
-<div style={{textAlign:'center',padding:'4px 0'}}><div style={{fontSize:20}}>⛽</div><div style={{fontSize:13,fontWeight:700,color:'#D97706',marginTop:4}}>Fuel Economy</div><div style={{fontSize:12,color:'#92400E',marginTop:2}}>Add a Fuel expense with quantity to calculate MPG & L/100km</div></div>
+<div style={{display:'flex',alignItems:'center',gap:10}}>
+<span style={{fontSize:20}}>⛽</span>
+<div><div style={{fontSize:12,fontWeight:700,color:'#D97706'}}>Fuel Economy</div><div style={{fontSize:11,color:'#92400E'}}>Add a Fuel expense with quantity to calculate</div></div>
+</div>
 )}
 </div>
-<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 16px 8px'}}>
-<div style={{fontSize:17,fontWeight:700,color:T.text}}>Expenses</div>
-<button onClick={()=>{setEditE(null);setShow(true);}} style={{display:'flex',alignItems:'center',gap:4,background:T.primary,color:'#fff',border:'none',borderRadius:10,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:'pointer'}}>+ Add Expense</button>
+<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 16px 8px'}}>
+<div style={{fontSize:16,fontWeight:700,color:T.text}}>Expenses</div>
+<button onClick={()=>{setEditE(null);setShow(true);}} style={{display:'flex',alignItems:'center',gap:4,background:T.primary,color:'#fff',border:'none',borderRadius:10,padding:'8px 14px',fontSize:13,fontWeight:600,cursor:'pointer'}}>+ Add</button>
 </div>
 <div style={{flex:1,overflowY:'auto',padding:'0 16px 24px'}}>
 {tExp.length===0?(<div style={{textAlign:'center',padding:32,color:T.textSec}}><div style={{fontSize:40}}>🧾</div><div style={{fontSize:15,marginTop:12}}>No expenses recorded yet</div></div>):tExp.map(exp=>{
@@ -1127,6 +1228,80 @@ return(
 })}
 </div>
 <AddExpenseModal visible={show} onClose={()=>{setShow(false);setEditE(null);}} onSave={saveE} tripId={tripId} editExpense={editE} T={T}/>
+</>)}
+
+{/* ══════════ PODs TAB ══════════ */}
+{activeTab==='pods'&&(<>
+{/* Hidden file input — accept images, allow camera on mobile */}
+<input ref={fileRef} type="file" accept="image/*" capture="environment"
+style={{display:'none'}} onChange={handleFileChange}/>
+
+{/* ── Label + preview before saving ── */}
+{showLabelInput&&pendingFile&&(
+<div style={{margin:'12px 16px',background:T.card,borderRadius:16,padding:16,boxShadow:'0 2px 8px rgba(0,0,0,.1)',border:`2px solid ${T.primary}`}}>
+<div style={{fontSize:13,fontWeight:700,color:T.primary,marginBottom:10}}>📄 New POD — Add Label</div>
+<img src={pendingFile.data} alt="preview" style={{width:'100%',maxHeight:180,objectFit:'cover',borderRadius:10,marginBottom:10}}/>
+<input value={podLabel} onChange={e=>setPodLabel(e.target.value)}
+placeholder="Label (e.g. Delivery Receipt, Bill of Lading…)"
+style={{border:`1px solid ${T.border}`,borderRadius:8,padding:'10px 12px',fontSize:14,color:T.text,background:T.bg,width:'100%',boxSizing:'border-box',outline:'none',marginBottom:10}}/>
+<div style={{display:'flex',gap:8}}>
+<button onClick={savePod} style={{flex:1,background:T.primary,color:'#fff',border:'none',borderRadius:10,padding:'11px 0',fontSize:14,fontWeight:700,cursor:'pointer'}}>💾 Save POD</button>
+<button onClick={cancelPod} style={{flex:1,background:T.border,color:T.text,border:'none',borderRadius:10,padding:'11px 0',fontSize:14,fontWeight:600,cursor:'pointer'}}>Cancel</button>
+</div>
+</div>
+)}
+
+{/* ── Upload button ── */}
+{!showLabelInput&&(
+<div style={{padding:'12px 16px 8px',display:'flex',gap:8}}>
+<button onClick={()=>fileRef.current?.click()}
+style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,background:T.primary,color:'#fff',border:'none',borderRadius:12,padding:'12px 0',fontSize:14,fontWeight:700,cursor:'pointer'}}>
+{uploading?'⏳ Loading…':'📷 Add POD'}
+</button>
+</div>
+)}
+
+{/* ── POD thumbnail grid ── */}
+<div style={{flex:1,overflowY:'auto',padding:'4px 16px 32px'}}>
+{tPods.length===0&&!showLabelInput?(
+<div style={{textAlign:'center',padding:'40px 20px',color:T.textSec}}>
+<div style={{fontSize:56}}>📄</div>
+<div style={{fontSize:16,fontWeight:700,marginTop:16,color:T.text}}>No PODs yet</div>
+<div style={{fontSize:13,marginTop:6}}>Tap "Add POD" to upload a proof of delivery photo</div>
+<div style={{fontSize:11,marginTop:8,color:T.textSec,lineHeight:1.5}}>Accepts photos from your camera roll or take a new photo directly</div>
+</div>
+):tPods.map(pod=>(
+<div key={pod.id} style={{background:T.card,borderRadius:14,marginBottom:12,overflow:'hidden',boxShadow:'0 2px 8px rgba(0,0,0,.08)'}}>
+{confirmPodId===pod.id?(
+<div style={{background:'#FEF2F2',padding:'14px 16px'}}>
+<div style={{fontSize:13,fontWeight:600,color:'#DC2626',marginBottom:8}}>🗑️ Delete "{pod.label}"?</div>
+<div style={{fontSize:11,color:'#64748B',marginBottom:10}}>This cannot be undone.</div>
+<div style={{display:'flex',gap:8}}>
+<button onClick={()=>delPod(pod.id)} style={{flex:1,background:'#DC2626',color:'#fff',border:'none',borderRadius:8,padding:'10px 0',fontSize:13,fontWeight:700,cursor:'pointer'}}>Yes, Delete</button>
+<button onClick={()=>setConfirmPodId(null)} style={{flex:1,background:T.border,color:T.text,border:'none',borderRadius:8,padding:'10px 0',fontSize:13,fontWeight:600,cursor:'pointer'}}>Cancel</button>
+</div>
+</div>
+):(
+<>
+{/* Thumbnail — tap to fullscreen */}
+<div onClick={()=>setViewPod(pod)} style={{cursor:'pointer',position:'relative'}}>
+<img src={pod.data} alt={pod.label} style={{width:'100%',height:160,objectFit:'cover',display:'block'}}/>
+<div style={{position:'absolute',bottom:0,left:0,right:0,background:'linear-gradient(transparent,rgba(0,0,0,.55))',padding:'20px 12px 8px'}}>
+<div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{pod.label}</div>
+<div style={{fontSize:11,color:'rgba(255,255,255,.75)',marginTop:2}}>{pod.date}</div>
+</div>
+<div style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.4)',borderRadius:6,padding:'3px 8px',fontSize:10,color:'#fff',fontWeight:600}}>Tap to view</div>
+</div>
+<div style={{display:'flex',justifyContent:'flex-end',padding:'8px 12px',borderTop:`1px solid ${T.border}`}}>
+<button onClick={()=>setConfirmPodId(pod.id)} style={{background:'none',border:'none',color:'#EF4444',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>🗑️ Delete</button>
+</div>
+</>
+)}
+</div>
+))}
+</div>
+</>)}
+
 </div>
 );
 }
@@ -1233,6 +1408,7 @@ const {T}=useT();
 const [trips,    setTrips]    = useLocalStorage('tl_trips',    INIT_TRIPS);
 const [expenses, setExpenses] = useLocalStorage('tl_expenses', INIT_EXPENSES);
 const [vehicles, setVehicles] = useLocalStorage('tl_vehicles', []);
+const [pods,     setPods]     = useLocalStorage('tl_pods',     []);
 const [vc,       setVc]       = useLocalStorage('tl_vc',       {unit_number:'',vehicle_type:'',fuel_tank_capacity:'',driver_name:''});
 const [stack,setStack]=useState(['Dashboard']);
 const [selId,setSelId]=useState(null);
@@ -1248,7 +1424,7 @@ return(
 {cur==='Vehicles'   && <Vehicles   vehicles={vehicles} setVehicles={setVehicles}/>}
 {cur==='Reports'    && <Reports    trips={trips} expenses={expenses}/>}
 {cur==='Settings'   && <Settings   vc={vc} setVc={setVc}/>}
-{cur==='TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} goBack={goBack}/>}
+{cur==='TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} pods={pods} setPods={setPods} goBack={goBack}/>}
 </div>
 {cur!=='TripDetail'&&<TabBar active={activeTab} onPress={nav} T={T}/>}
 </div>
