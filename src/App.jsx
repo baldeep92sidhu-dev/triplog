@@ -54,63 +54,6 @@ const INIT_TRIPS = [];
 const INIT_EXPENSES = [];
 
 // ═══════════════════════════ UTILS ═══════════════════════════════
-function _airMiles(la1, lo1, la2, lo2) {
-    const R = 3959, dLa = (la2 - la1) * Math.PI / 180, dLo = (lo2 - lo1) * Math.PI / 180;
-    const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * Math.PI / 180) * Math.cos(la2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function getDrivingDist(origin, destination, oLat, oLon, dLat, dLon) {
-    const oLa = oLat || 0, oLo = oLon || 0, dLa = dLat || 0, dLo = dLon || 0;
-    const air = _airMiles(oLa, oLo, dLa, dLo);
-    let f;
-    if (air < 5) f = 2.50;
-    else if (air < 25) f = 1.25;
-    else if (air < 60) f = 1.18;
-    else if (air < 100) f = 1.17;
-    else if (air < 160) f = 1.12;
-    else if (air < 260) f = 1.15;
-    else if (air < 450) f = 1.22;
-    else f = 1.35;
-    const latD = Math.abs(oLa - dLa), lonD = Math.abs(oLo - dLo);
-    const avgLat = (oLa + dLa) / 2, avgLon = (oLo + dLo) / 2;
-    function isON(la, lo) {
-        if (la > 43.8 && la < 48.0 && lo > -95.0 && lo < -74.0) return true;
-        if (la > 42.2 && la < 43.9 && lo > -84.5 && lo < -79.0) return true;
-        return false;
-    }
-    const inON_A = isON(oLa, oLo), inON_B = isON(dLa, dLo);
-    let anyBorder = false;
-    function applyBorder(origLa, origLo, destLa, destLo) {
-        const isTorArea = origLa > 43.2;
-        if (destLa > 42.4 && destLa < 43.4 && destLo > -79.5 && destLo < -78.0) { if (origLa > 43.4) { f = Math.max(f, 1.70); anyBorder = true; } return; }
-        if (destLa > 42.5 && destLa < 43.5 && destLo > -78.0 && destLo < -76.5) { f = Math.max(f, 1.78); anyBorder = true; return; }
-        if (destLa > 42.5 && destLa < 43.5 && destLo > -76.5 && destLo < -75.5) { f = Math.max(f, 1.62); anyBorder = true; return; }
-        if (destLa > 42.0 && destLa < 44.0 && destLo > -75.5 && destLo < -73.0) { f = Math.max(f, 1.15); anyBorder = true; return; }
-        if (destLo > -75.5 && destLa < 42.5) { f = Math.max(f, isTorArea ? 1.52 : 1.28); anyBorder = true; return; }
-        if (destLa > 40.5 && destLa < 42.4 && destLo > -82.5 && destLo < -80.0) { if (destLa < 41.8 && destLo < -81.3) f = Math.max(f, isTorArea ? 1.62 : 1.80); anyBorder = true; return; }
-        if (destLa > 39.8 && destLa < 41.5 && destLo > -81.0 && destLo < -79.0) { f = Math.max(f, isTorArea ? 1.48 : 1.55); anyBorder = true; return; }
-        if (destLa > 38.5 && destLa < 41.5 && destLo > -85.5 && destLo < -82.0) { f = Math.max(f, 1.40); anyBorder = true; return; }
-        if (destLo < -83.0 && destLa > 41.5 && destLa < 43.5) { f = Math.max(f, 1.12); anyBorder = true; return; }
-    }
-    if (inON_A && !inON_B) applyBorder(oLa, oLo, dLa, dLo);
-    if (inON_B && !inON_A) applyBorder(dLa, dLo, oLa, oLo);
-    const detCity = (oLa > 42.0 && oLa < 43.0 && oLo > -84.5 && oLo < -82.8);
-    const clevCity = (dLa > 41.0 && dLa < 42.5 && dLo > -82.5 && dLo < -81.0);
-    const detCity2 = (dLa > 42.0 && dLa < 43.0 && dLo > -84.5 && dLo < -82.8);
-    const clevCity2 = (oLa > 41.0 && oLa < 42.5 && oLo > -82.5 && oLo < -81.0);
-    const detClevErie = ((detCity && clevCity) || (detCity2 && clevCity2));
-    if (detClevErie) f = Math.max(f, 1.85);
-    const muskoka = (avgLat > 43.7 && avgLat < 44.8 && lonD < 0.8 && latD > 0.5 && latD < 1.5 && air > 40 && air < 70);
-    if (muskoka) f = Math.max(f, 1.65);
-    const qew = (avgLat > 42.7 && avgLat < 43.5 && avgLon > -80.0 && avgLon < -78.5 && latD < 0.7 && lonD < 1.5 && air < 80 && !anyBorder);
-    if (qew) f = Math.min(f, 1.02);
-    const hwy401 = (avgLat > 42.0 && avgLat < 44.5 && lonD > 1.5 && latD < 1.5 && air > 80 && !anyBorder && !detClevErie);
-    if (hwy401) f = Math.min(f, 1.13);
-    const miles = air * f;
-    return { miles: parseFloat(miles.toFixed(1)), km: parseFloat((miles * 1.60934).toFixed(1)) };
-}
-
 function curMonth() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`; }
 function fmtC(v) { return '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 
@@ -209,7 +152,8 @@ function Sheet({ visible, onClose, title, T, children }) {
     );
 }
 
-// ═══════════════════════════ CITY SEARCH ═════════════════════════
+// ═══════════════════════════ CITY DATABASE + SEARCH ══════════════
+// 400+ cities across Canada & USA — instant offline search, no API needed
 const CITIES = [
     ['Acton', 'ON', 43.6317, -80.0453], ['Ajax', 'ON', 43.8509, -79.0204], ['Alliston', 'ON', 44.1501, -79.8667],
     ['Almonte', 'ON', 45.2284, -76.1895], ['Amherstburg', 'ON', 42.1001, -83.1001], ['Arnprior', 'ON', 45.4334, -76.3548],
@@ -251,154 +195,358 @@ const CITIES = [
     ['Montreal', 'QC', 45.5017, -73.5673], ['Quebec City', 'QC', 46.8139, -71.2082], ['Laval', 'QC', 45.5991, -73.7124],
     ['Longueuil', 'QC', 45.5315, -73.5182], ['Sherbrooke', 'QC', 45.4042, -71.8929], ['Saguenay', 'QC', 48.4285, -71.0688],
     ['Trois-Rivieres', 'QC', 46.3432, -72.5418], ['Drummondville', 'QC', 45.8836, -72.4854], ['Granby', 'QC', 45.3987, -72.7312],
+    ['Saint-Jerome', 'QC', 45.7834, -74.0001], ['Joliette', 'QC', 46.0167, -73.4501], ['Rouyn-Noranda', 'QC', 48.2334, -79.0167],
+    ['Rimouski', 'QC', 48.4501, -68.5334], ['Sept-Iles', 'QC', 50.2167, -66.3834], ['Shawinigan', 'QC', 46.5667, -72.7501],
+    ['Victoriaville', 'QC', 46.0501, -71.9667], ['Thetford Mines', 'QC', 46.1001, -71.3001],
     ['Calgary', 'AB', 51.0447, -114.0719], ['Edmonton', 'AB', 53.5461, -113.4938], ['Red Deer', 'AB', 52.2681, -113.8112],
-    ['Lethbridge', 'AB', 49.6956, -112.8451], ['Medicine Hat', 'AB', 50.0405, -110.6764], ['Grande Prairie', 'AB', 55.1707, -118.7884],
-    ['Fort McMurray', 'AB', 56.7265, -111.3790], ['Banff', 'AB', 51.1784, -115.5708], ['Canmore', 'AB', 51.0890, -115.3597],
+    ['Lethbridge', 'AB', 49.6956, -112.8451], ['St Albert', 'AB', 53.6334, -113.6251], ['Medicine Hat', 'AB', 50.0405, -110.6764],
+    ['Grande Prairie', 'AB', 55.1707, -118.7884], ['Airdrie', 'AB', 51.2917, -114.0144], ['Spruce Grove', 'AB', 53.5457, -113.9195],
+    ['Leduc', 'AB', 53.2667, -113.5501], ['Fort McMurray', 'AB', 56.7265, -111.3790], ['Camrose', 'AB', 53.0167, -112.8334],
+    ['Lloydminster', 'AB', 53.2834, -110.0001], ['Brooks', 'AB', 50.5667, -111.8834], ['High River', 'AB', 50.5834, -113.8667],
+    ['Banff', 'AB', 51.1784, -115.5708], ['Canmore', 'AB', 51.0890, -115.3597], ['Jasper', 'AB', 52.8734, -118.0822],
     ['Vancouver', 'BC', 49.2827, -123.1207], ['Surrey', 'BC', 49.1913, -122.8490], ['Burnaby', 'BC', 49.2488, -122.9805],
     ['Richmond', 'BC', 49.1666, -123.1336], ['Kelowna', 'BC', 49.8880, -119.4960], ['Abbotsford', 'BC', 49.0504, -122.3045],
-    ['Kamloops', 'BC', 50.6745, -120.3273], ['Nanaimo', 'BC', 49.1659, -123.9401], ['Victoria', 'BC', 48.4284, -123.3656],
-    ['Prince George', 'BC', 53.9171, -122.7497], ['Winnipeg', 'MB', 49.8951, -97.1384], ['Brandon', 'MB', 49.8485, -99.9501],
+    ['Coquitlam', 'BC', 49.2838, -122.7932], ['Langley', 'BC', 49.1042, -122.6604], ['Kamloops', 'BC', 50.6745, -120.3273],
+    ['Nanaimo', 'BC', 49.1659, -123.9401], ['Chilliwack', 'BC', 49.1579, -121.9514], ['Victoria', 'BC', 48.4284, -123.3656],
+    ['Prince George', 'BC', 53.9171, -122.7497], ['Vernon', 'BC', 50.2671, -119.2720], ['Penticton', 'BC', 49.4990, -119.5937],
+    ['Fort St John', 'BC', 56.2518, -120.8487], ['Dawson Creek', 'BC', 55.7596, -120.2370], ['Terrace', 'BC', 54.5168, -128.6001],
+    ['Winnipeg', 'MB', 49.8951, -97.1384], ['Brandon', 'MB', 49.8485, -99.9501], ['Steinbach', 'MB', 49.5251, -96.6834],
+    ['Thompson', 'MB', 55.7435, -97.8553], ['Portage la Prairie', 'MB', 49.9728, -98.2917], ['Selkirk', 'MB', 50.1441, -96.8844],
     ['Saskatoon', 'SK', 52.1332, -106.6700], ['Regina', 'SK', 50.4452, -104.6189], ['Prince Albert', 'SK', 53.2001, -105.7501],
-    ['Halifax', 'NS', 44.6488, -63.5752], ['Moncton', 'NB', 46.0878, -64.7782], ['Saint John', 'NB', 45.2733, -66.0633],
-    ['Fredericton', 'NB', 45.9636, -66.6431], ['Charlottetown', 'PE', 46.2382, -63.1311], ["St John's", 'NL', 47.5615, -52.7126],
+    ['Moose Jaw', 'SK', 50.3934, -105.5518], ['Swift Current', 'SK', 50.2834, -107.7968], ['Yorkton', 'SK', 51.2167, -102.4667],
+    ['North Battleford', 'SK', 52.7834, -108.2834],
+    ['Halifax', 'NS', 44.6488, -63.5752], ['Sydney', 'NS', 46.1368, -60.1942], ['Truro', 'NS', 45.3651, -63.2860],
+    ['Moncton', 'NB', 46.0878, -64.7782], ['Saint John', 'NB', 45.2733, -66.0633], ['Fredericton', 'NB', 45.9636, -66.6431],
+    ['Miramichi', 'NB', 47.0251, -65.4834], ['Bathurst', 'NB', 47.6167, -65.6501], ['Edmundston', 'NB', 47.3668, -68.3251],
+    ['Charlottetown', 'PE', 46.2382, -63.1311], ["St John's", 'NL', 47.5615, -52.7126], ['Corner Brook', 'NL', 48.9500, -57.9500],
     ['Whitehorse', 'YT', 60.7212, -135.0568], ['Yellowknife', 'NT', 62.4540, -114.3718],
     ['Columbus', 'OH', 39.9612, -82.9988], ['Cleveland', 'OH', 41.4993, -81.6944], ['Cincinnati', 'OH', 39.1031, -84.5120],
     ['Toledo', 'OH', 41.6639, -83.5552], ['Akron', 'OH', 41.0814, -81.5190], ['Dayton', 'OH', 39.7589, -84.1916],
     ['Youngstown', 'OH', 41.0998, -80.6495], ['Canton', 'OH', 40.7989, -81.3784], ['Chillicothe', 'OH', 39.3328, -82.9824],
+    ['Mansfield', 'OH', 40.7584, -82.5154], ['Lima', 'OH', 40.7423, -84.1052], ['Findlay', 'OH', 41.0442, -83.6499],
+    ['Sandusky', 'OH', 41.4484, -82.7077], ['Zanesville', 'OH', 39.9403, -82.0132],
     ['Chicago', 'IL', 41.8781, -87.6298], ['Rockford', 'IL', 42.2711, -89.0940], ['Peoria', 'IL', 40.6936, -89.5890],
-    ['Springfield', 'IL', 39.7817, -89.6501], ['Kansas City', 'MO', 39.0997, -94.5786], ['St Louis', 'MO', 38.6270, -90.1994],
+    ['Springfield', 'IL', 39.7817, -89.6501], ['Joliet', 'IL', 41.5250, -88.0817], ['Naperville', 'IL', 41.7508, -88.1535],
+    ['Aurora', 'IL', 41.7606, -88.3201], ['Elgin', 'IL', 42.0354, -88.2826], ['Waukegan', 'IL', 42.3636, -87.8448],
+    ['Champaign', 'IL', 40.1164, -88.2434], ['Bloomington', 'IL', 40.4842, -88.9937], ['Decatur', 'IL', 39.8403, -88.9548],
     ['Detroit', 'MI', 42.3314, -83.0458], ['Grand Rapids', 'MI', 42.9634, -85.6681], ['Lansing', 'MI', 42.7325, -84.5555],
-    ['Ann Arbor', 'MI', 42.2808, -83.7430], ['Flint', 'MI', 43.0125, -83.6875], ['Kalamazoo', 'MI', 42.2917, -85.5872],
-    ['Indianapolis', 'IN', 39.7684, -86.1581], ['Fort Wayne', 'IN', 41.1300, -85.1289], ['South Bend', 'IN', 41.6764, -86.2520],
+    ['Flint', 'MI', 43.0125, -83.6875], ['Ann Arbor', 'MI', 42.2808, -83.7430], ['Kalamazoo', 'MI', 42.2917, -85.5872],
+    ['Saginaw', 'MI', 43.4195, -83.9508], ['Port Huron', 'MI', 42.9709, -82.4249], ['Bay City', 'MI', 43.5945, -83.8888],
+    ['Traverse City', 'MI', 44.7631, -85.6206], ['Marquette', 'MI', 46.5476, -87.3953],
+    ['Indianapolis', 'IN', 39.7684, -86.1581], ['Fort Wayne', 'IN', 41.1300, -85.1289], ['Evansville', 'IN', 37.9716, -87.5711],
+    ['South Bend', 'IN', 41.6764, -86.2520], ['Hammond', 'IN', 41.5831, -87.5001], ['Gary', 'IN', 41.5934, -87.3465],
+    ['Muncie', 'IN', 40.1934, -85.3864], ['Terre Haute', 'IN', 39.4667, -87.4139], ['Kokomo', 'IN', 40.4864, -86.1336],
     ['Milwaukee', 'WI', 43.0389, -87.9065], ['Madison', 'WI', 43.0731, -89.4012], ['Green Bay', 'WI', 44.5133, -88.0133],
-    ['Minneapolis', 'MN', 44.9778, -93.2650], ['Saint Paul', 'MN', 44.9537, -93.0900], ['Duluth', 'MN', 46.7867, -92.1005],
-    ['Des Moines', 'IA', 41.5868, -93.6250], ['Cedar Rapids', 'IA', 41.9779, -91.6656], ['Omaha', 'NE', 41.2565, -95.9345],
-    ['Fargo', 'ND', 46.8772, -96.7898], ['Sioux Falls', 'SD', 43.5446, -96.7311], ['Wichita', 'KS', 37.6872, -97.3301],
+    ['Kenosha', 'WI', 42.5847, -87.8212], ['Racine', 'WI', 42.7261, -87.7829], ['Appleton', 'WI', 44.2619, -88.4154],
+    ['Minneapolis', 'MN', 44.9778, -93.2650], ['Saint Paul', 'MN', 44.9537, -93.0900], ['Rochester', 'MN', 44.0121, -92.4802],
+    ['Duluth', 'MN', 46.7867, -92.1005], ['Saint Cloud', 'MN', 45.5608, -94.1625],
+    ['Des Moines', 'IA', 41.5868, -93.6250], ['Cedar Rapids', 'IA', 41.9779, -91.6656], ['Davenport', 'IA', 41.5236, -90.5776],
+    ['Sioux City', 'IA', 42.4999, -96.4003], ['Waterloo', 'IA', 42.4928, -92.3426],
+    ['Omaha', 'NE', 41.2565, -95.9345], ['Lincoln', 'NE', 40.8136, -96.7026], ['Grand Island', 'NE', 40.9250, -98.3420],
+    ['Fargo', 'ND', 46.8772, -96.7898], ['Bismarck', 'ND', 46.8083, -100.7837],
+    ['Sioux Falls', 'SD', 43.5446, -96.7311], ['Rapid City', 'SD', 44.0805, -103.2310],
+    ['Wichita', 'KS', 37.6872, -97.3301], ['Topeka', 'KS', 39.0489, -95.6780], ['Overland Park', 'KS', 38.9822, -94.6708],
+    ['Kansas City', 'MO', 39.0997, -94.5786], ['St Louis', 'MO', 38.6270, -90.1994], ['Springfield', 'MO', 37.2153, -93.2982],
+    ['Columbia', 'MO', 38.9517, -92.3341], ['St Joseph', 'MO', 39.7675, -94.8467], ['Joplin', 'MO', 37.0842, -94.5133],
     ['New York City', 'NY', 40.7128, -74.0060], ['Buffalo', 'NY', 42.8864, -78.8784], ['Albany', 'NY', 42.6526, -73.7562],
-    ['Rochester', 'NY', 43.1566, -77.6088], ['Syracuse', 'NY', 43.0481, -76.1474],
-    ['Philadelphia', 'PA', 39.9526, -75.1652], ['Pittsburgh', 'PA', 40.4406, -79.9959], ['Erie', 'PA', 42.1292, -80.0851],
-    ['Boston', 'MA', 42.3601, -71.0589], ['Providence', 'RI', 41.8240, -71.4128], ['Hartford', 'CT', 41.7637, -72.6851],
-    ['Newark', 'NJ', 40.7357, -74.1724], ['Baltimore', 'MD', 39.2904, -76.6122], ['Washington', 'DC', 38.9072, -77.0369],
-    ['Atlanta', 'GA', 33.7490, -84.3880], ['Charlotte', 'NC', 35.2271, -80.8431], ['Raleigh', 'NC', 35.7796, -78.6382],
-    ['Nashville', 'TN', 36.1627, -86.7816], ['Memphis', 'TN', 35.1495, -90.0490], ['Louisville', 'KY', 38.2527, -85.7585],
-    ['Birmingham', 'AL', 33.5207, -86.8025], ['Jacksonville', 'FL', 30.3322, -81.6557], ['Miami', 'FL', 25.7617, -80.1918],
-    ['Tampa', 'FL', 27.9506, -82.4572], ['Orlando', 'FL', 28.5383, -81.3792], ['Houston', 'TX', 29.7604, -95.3698],
-    ['San Antonio', 'TX', 29.4241, -98.4936], ['Dallas', 'TX', 32.7767, -96.7970], ['Austin', 'TX', 30.2672, -97.7431],
-    ['Fort Worth', 'TX', 32.7555, -97.3308], ['El Paso', 'TX', 31.7619, -106.4850], ['Amarillo', 'TX', 35.2220, -101.8313],
+    ['Rochester', 'NY', 43.1566, -77.6088], ['Syracuse', 'NY', 43.0481, -76.1474], ['Yonkers', 'NY', 40.9312, -73.8988],
+    ['Utica', 'NY', 43.1009, -75.2327], ['Watertown', 'NY', 43.9748, -75.9107],
+    ['Philadelphia', 'PA', 39.9526, -75.1652], ['Pittsburgh', 'PA', 40.4406, -79.9959], ['Allentown', 'PA', 40.6023, -75.4714],
+    ['Erie', 'PA', 42.1292, -80.0851], ['Reading', 'PA', 40.3356, -75.9269], ['Scranton', 'PA', 41.4090, -75.6624],
+    ['Lancaster', 'PA', 40.0379, -76.3055], ['Harrisburg', 'PA', 40.2732, -76.8867], ['Altoona', 'PA', 40.5187, -78.3947],
+    ['Boston', 'MA', 42.3601, -71.0589], ['Worcester', 'MA', 42.2626, -71.8023], ['Springfield', 'MA', 42.1015, -72.5898],
+    ['Providence', 'RI', 41.8240, -71.4128], ['Hartford', 'CT', 41.7637, -72.6851], ['New Haven', 'CT', 41.3083, -72.9279],
+    ['Bridgeport', 'CT', 41.1865, -73.1952], ['Manchester', 'NH', 42.9956, -71.4548],
+    ['Burlington', 'VT', 44.4759, -73.2121], ['Portland', 'ME', 43.6591, -70.2568],
+    ['Newark', 'NJ', 40.7357, -74.1724], ['Jersey City', 'NJ', 40.7178, -74.0431], ['Trenton', 'NJ', 40.2171, -74.7429],
+    ['Baltimore', 'MD', 39.2904, -76.6122], ['Washington', 'DC', 38.9072, -77.0369], ['Wilmington', 'DE', 39.7447, -75.5484],
+    ['Atlanta', 'GA', 33.7490, -84.3880], ['Savannah', 'GA', 32.0835, -81.0998], ['Augusta', 'GA', 33.4735, -82.0105],
+    ['Charlotte', 'NC', 35.2271, -80.8431], ['Raleigh', 'NC', 35.7796, -78.6382], ['Greensboro', 'NC', 36.0726, -79.7920],
+    ['Durham', 'NC', 35.9940, -78.8986], ['Winston-Salem', 'NC', 36.0999, -80.2442], ['Asheville', 'NC', 35.5951, -82.5515],
+    ['Nashville', 'TN', 36.1627, -86.7816], ['Memphis', 'TN', 35.1495, -90.0490], ['Knoxville', 'TN', 35.9606, -83.9207],
+    ['Chattanooga', 'TN', 35.0456, -85.3097], ['Clarksville', 'TN', 36.5298, -87.3595],
+    ['Louisville', 'KY', 38.2527, -85.7585], ['Lexington', 'KY', 38.0406, -84.5037], ['Bowling Green', 'KY', 36.9685, -86.4808],
+    ['Birmingham', 'AL', 33.5207, -86.8025], ['Montgomery', 'AL', 32.3668, -86.3000], ['Huntsville', 'AL', 34.7304, -86.5861],
+    ['Mobile', 'AL', 30.6954, -88.0399],
+    ['Jackson', 'MS', 32.2988, -90.1848], ['Gulfport', 'MS', 30.3674, -89.0928],
+    ['New Orleans', 'LA', 29.9511, -90.0715], ['Baton Rouge', 'LA', 30.4515, -91.1871], ['Shreveport', 'LA', 32.5252, -93.7502],
+    ['Lafayette', 'LA', 30.2241, -92.0198], ['Lake Charles', 'LA', 30.2266, -93.2174],
+    ['Charleston', 'WV', 38.3498, -81.6326], ['Morgantown', 'WV', 39.6295, -79.9559],
+    ['Columbia', 'SC', 34.0007, -81.0348], ['Charleston', 'SC', 32.7765, -79.9311], ['Greenville', 'SC', 34.8526, -82.3940],
+    ['Little Rock', 'AR', 34.7465, -92.2896], ['Fort Smith', 'AR', 35.3859, -94.3985], ['Fayetteville', 'AR', 36.0822, -94.1719],
+    ['Oklahoma City', 'OK', 35.4676, -97.5164], ['Tulsa', 'OK', 36.1540, -95.9928], ['Norman', 'OK', 35.2226, -97.4395],
+    ['Richmond', 'VA', 37.5407, -77.4360], ['Virginia Beach', 'VA', 36.8529, -75.9780], ['Norfolk', 'VA', 36.8508, -76.2859],
+    ['Roanoke', 'VA', 37.2710, -79.9414],
+    ['Jacksonville', 'FL', 30.3322, -81.6557], ['Miami', 'FL', 25.7617, -80.1918], ['Tampa', 'FL', 27.9506, -82.4572],
+    ['Orlando', 'FL', 28.5383, -81.3792], ['Fort Lauderdale', 'FL', 26.1224, -80.1373], ['Tallahassee', 'FL', 30.4518, -84.2807],
+    ['Pensacola', 'FL', 30.4213, -87.2169], ['Gainesville', 'FL', 29.6516, -82.3248], ['Lakeland', 'FL', 28.0395, -81.9498],
+    ['Houston', 'TX', 29.7604, -95.3698], ['San Antonio', 'TX', 29.4241, -98.4936], ['Dallas', 'TX', 32.7767, -96.7970],
+    ['Austin', 'TX', 30.2672, -97.7431], ['Fort Worth', 'TX', 32.7555, -97.3308], ['El Paso', 'TX', 31.7619, -106.4850],
+    ['Laredo', 'TX', 27.5306, -99.4803], ['Amarillo', 'TX', 35.2220, -101.8313], ['Lubbock', 'TX', 33.5779, -101.8552],
+    ['Corpus Christi', 'TX', 27.8006, -97.3964], ['Waco', 'TX', 31.5493, -97.1467], ['Abilene', 'TX', 32.4487, -99.7331],
+    ['Tyler', 'TX', 32.3513, -95.3011], ['Midland', 'TX', 31.9973, -102.0779], ['Odessa', 'TX', 31.8457, -102.3676],
+    ['Wichita Falls', 'TX', 33.9137, -98.4934], ['McAllen', 'TX', 26.2034, -98.2300], ['Beaumont', 'TX', 30.0802, -94.1266],
     ['Los Angeles', 'CA', 34.0522, -118.2437], ['San Diego', 'CA', 32.7157, -117.1611], ['San Jose', 'CA', 37.3382, -121.8863],
-    ['San Francisco', 'CA', 37.7749, -122.4194], ['Sacramento', 'CA', 38.5816, -121.4944], ['Fresno', 'CA', 36.7378, -119.7871],
-    ['Phoenix', 'AZ', 33.4484, -112.0740], ['Tucson', 'AZ', 32.2226, -110.9747], ['Las Vegas', 'NV', 36.1699, -115.1398],
-    ['Portland', 'OR', 45.5051, -122.6750], ['Eugene', 'OR', 44.0521, -123.0868], ['Seattle', 'WA', 47.6062, -122.3321],
-    ['Spokane', 'WA', 47.6588, -117.4260], ['Denver', 'CO', 39.7392, -104.9903], ['Colorado Springs', 'CO', 38.8339, -104.8214],
-    ['Salt Lake City', 'UT', 40.7608, -111.8910], ['Albuquerque', 'NM', 35.0844, -106.6504],
-    ['Billings', 'MT', 45.7833, -108.5007], ['Boise', 'ID', 43.6150, -116.2023], ['Cheyenne', 'WY', 41.1340, -104.8202],
-    ['Anchorage', 'AK', 61.2181, -149.9003], ['Honolulu', 'HI', 21.3069, -157.8583],
+    ['San Francisco', 'CA', 37.7749, -122.4194], ['Fresno', 'CA', 36.7378, -119.7871], ['Sacramento', 'CA', 38.5816, -121.4944],
+    ['Long Beach', 'CA', 33.7701, -118.1937], ['Oakland', 'CA', 37.8044, -122.2711], ['Bakersfield', 'CA', 35.3733, -119.0187],
+    ['Anaheim', 'CA', 33.8366, -117.9143], ['Riverside', 'CA', 33.9806, -117.3755], ['Stockton', 'CA', 37.9577, -121.2908],
+    ['Modesto', 'CA', 37.6391, -120.9969], ['Visalia', 'CA', 36.3302, -119.2921], ['Salinas', 'CA', 36.6777, -121.6555],
+    ['Phoenix', 'AZ', 33.4484, -112.0740], ['Tucson', 'AZ', 32.2226, -110.9747], ['Mesa', 'AZ', 33.4152, -111.8315],
+    ['Chandler', 'AZ', 33.3062, -111.8413], ['Scottsdale', 'AZ', 33.4942, -111.9261], ['Flagstaff', 'AZ', 35.1983, -111.6513],
+    ['Las Vegas', 'NV', 36.1699, -115.1398], ['Henderson', 'NV', 36.0397, -114.9819], ['Reno', 'NV', 39.5296, -119.8138],
+    ['Portland', 'OR', 45.5051, -122.6750], ['Eugene', 'OR', 44.0521, -123.0868], ['Salem', 'OR', 44.9429, -123.0351],
+    ['Bend', 'OR', 44.0582, -121.3153], ['Medford', 'OR', 42.3265, -122.8756],
+    ['Seattle', 'WA', 47.6062, -122.3321], ['Spokane', 'WA', 47.6588, -117.4260], ['Tacoma', 'WA', 47.2529, -122.4443],
+    ['Bellevue', 'WA', 47.6101, -122.2015], ['Everett', 'WA', 47.9790, -122.2021], ['Yakima', 'WA', 46.6021, -120.5059],
+    ['Bellingham', 'WA', 48.7519, -122.4787],
+    ['Denver', 'CO', 39.7392, -104.9903], ['Colorado Springs', 'CO', 38.8339, -104.8214], ['Fort Collins', 'CO', 40.5853, -105.0844],
+    ['Pueblo', 'CO', 38.2544, -104.6091], ['Boulder', 'CO', 40.0150, -105.2705], ['Grand Junction', 'CO', 39.0639, -108.5506],
+    ['Salt Lake City', 'UT', 40.7608, -111.8910], ['Provo', 'UT', 40.2338, -111.6585], ['Ogden', 'UT', 41.2230, -111.9738],
+    ['St George', 'UT', 37.1041, -113.5841],
+    ['Albuquerque', 'NM', 35.0844, -106.6504], ['Las Cruces', 'NM', 32.3199, -106.7637], ['Santa Fe', 'NM', 35.6870, -105.9378],
+    ['Billings', 'MT', 45.7833, -108.5007], ['Missoula', 'MT', 46.8721, -113.9940], ['Great Falls', 'MT', 47.4941, -111.2833],
+    ['Boise', 'ID', 43.6150, -116.2023], ['Nampa', 'ID', 43.5407, -116.5635], ['Idaho Falls', 'ID', 43.4665, -112.0340],
+    ['Cheyenne', 'WY', 41.1340, -104.8202], ['Casper', 'WY', 42.8501, -106.3252],
+    ['Anchorage', 'AK', 61.2181, -149.9003], ['Fairbanks', 'AK', 64.8378, -147.7164],
+    ['Honolulu', 'HI', 21.3069, -157.8583],
 ];
 
+// Haversine + road factor for driving distance estimate
+function calcDrivingDist(oLat, oLon, dLat, dLon) {
+    const R = 3959, dLa = (dLat - oLat) * Math.PI / 180, dLo = (dLon - oLon) * Math.PI / 180;
+    const a = Math.sin(dLa / 2) ** 2 + Math.cos(oLat * Math.PI / 180) * Math.cos(dLat * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
+    const air = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    // Road factor by distance bracket (calibrated)
+    let f = air < 25 ? 1.30 : air < 60 ? 1.20 : air < 150 ? 1.18 : air < 300 ? 1.20 : air < 600 ? 1.25 : 1.30;
+    const miles = air * f;
+    return { miles: parseFloat(miles.toFixed(1)), km: parseFloat((miles * 1.60934).toFixed(1)), source: 'estimate' };
+}
+
+// ── Custom city cache — persisted in localStorage ──────────────────
+const _cityCache = { list: [] };
+(function loadCache() {
+    try {
+        const raw = localStorage.getItem('tl_custom_cities');
+        if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) _cityCache.list = p; }
+    } catch (e) { }
+})();
+
+function saveCustomCity(name, province, lat, lon) {
+    try {
+        const key = (name + '|' + province).toLowerCase();
+        const exists = _cityCache.list.some(function (c) { return ((c[0] || '') + '|' + (c[1] || '')).toLowerCase() === key; });
+        if (exists) return;
+        _cityCache.list.push([name, province, parseFloat(lat) || 0, parseFloat(lon) || 0]);
+        localStorage.setItem('tl_custom_cities', JSON.stringify(_cityCache.list));
+    } catch (e) { }
+}
+
+// Province/state → approximate center coordinates (regular hyphens)
+const PROV_COORDS = {
+    ON: [44.0, -79.0], QC: [46.5, -72.5], BC: [53.7, -127.6], AB: [53.9, -116.5],
+    MB: [53.7, -98.8], SK: [52.9, -106.4], NS: [44.7, -63.0], NB: [46.5, -66.5],
+    NL: [53.1, -57.6], PE: [46.4, -63.2], NT: [64.3, -119.2], YT: [64.0, -135.0], NU: [70.3, -83.1],
+    AL: [32.8, -86.8], AK: [64.2, -153.3], AZ: [34.3, -111.6], AR: [34.8, -92.2],
+    CA: [36.8, -119.4], CO: [39.0, -105.5], CT: [41.6, -72.7], DE: [38.9, -75.5],
+    FL: [27.6, -81.5], GA: [32.7, -83.4], HI: [20.8, -156.3], ID: [44.1, -114.5],
+    IL: [40.0, -89.1], IN: [39.9, -86.3], IA: [42.0, -93.2], KS: [38.5, -98.4],
+    KY: [37.5, -85.3], LA: [31.2, -92.4], ME: [45.2, -69.0], MD: [39.0, -76.8],
+    MA: [42.3, -71.8], MI: [44.3, -85.4], MN: [46.4, -93.9], MS: [32.7, -89.6],
+    MO: [38.4, -92.5], MT: [46.9, -109.5], NE: [41.5, -99.9], NV: [39.3, -116.6],
+    NH: [43.5, -71.6], NJ: [40.2, -74.7], NM: [34.3, -106.0], NY: [42.9, -75.5],
+    NC: [35.5, -79.4], ND: [47.5, -100.4], OH: [40.3, -82.7], OK: [35.6, -97.5],
+    OR: [44.1, -120.5], PA: [40.9, -77.8], RI: [41.7, -71.5], SC: [33.8, -80.9],
+    SD: [44.4, -100.2], TN: [35.8, -86.4], TX: [31.5, -99.3], UT: [39.4, -111.1],
+    VT: [44.1, -72.7], VA: [37.5, -79.0], WA: [47.4, -120.5], WV: [38.6, -80.5],
+    WI: [44.4, -89.8], WY: [43.0, -107.5], DC: [38.9, -77.0],
+};
+
+function getCustomCities() { return _cityCache.list; }
+
+// Fast fuzzy search across built-in + saved custom cities
 function localSearch(q) {
     const raw = (q || '').trim().toLowerCase();
     if (raw.length < 2) return [];
     const comma = raw.indexOf(',');
     const cityPart = comma > 0 ? raw.slice(0, comma).trim() : raw;
     const provPart = comma > 0 ? raw.slice(comma + 1).trim() : '';
+    const builtInKeys = new Set(CITIES.map(function (c) { return c[0] + '|' + c[1]; }));
+    const all = [...CITIES, ...getCustomCities()];
     const exact = [], starts = [], contains = [], fuzzy = [];
-    CITIES.forEach(([n, p, lat, lon]) => {
+    all.forEach(function (row) {
+        const n = row[0], p = row[1], lat = row[2], lon = row[3];
         const nl = n.toLowerCase(), pl = p.toLowerCase();
-        if (provPart && !pl.startsWith(provPart)) return;
-        if (nl === cityPart) exact.push({ label: `${n}, ${p}`, lat, lon });
-        else if (nl.startsWith(cityPart)) starts.push({ label: `${n}, ${p}`, lat, lon });
-        else if (nl.includes(cityPart)) contains.push({ label: `${n}, ${p}`, lat, lon });
+        if (provPart && !pl.startsWith(provPart.toLowerCase())) return;
+        const isCustom = !builtInKeys.has(n + '|' + p);
+        const entry = { label: n + ', ' + p, lat: lat, lon: lon, isCustom: isCustom };
+        if (nl === cityPart) exact.push(entry);
+        else if (nl.startsWith(cityPart)) starts.push(entry);
+        else if (nl.includes(cityPart)) contains.push(entry);
         else if (cityPart.length >= 3) {
-            let qi = 0;
-            for (let i = 0; i < nl.length && qi < cityPart.length; i++) { if (nl[i] === cityPart[qi]) qi++; }
-            if (qi === cityPart.length) fuzzy.push({ label: `${n}, ${p}`, lat, lon });
+            var qi = 0;
+            for (var i = 0; i < nl.length && qi < cityPart.length; i++) { if (nl[i] === cityPart[qi]) qi++; }
+            if (qi === cityPart.length) fuzzy.push(entry);
         }
     });
     return [...exact, ...starts, ...contains, ...fuzzy].slice(0, 8);
 }
 
-const _aiCache = {};
+// Claude geocode — fallback when city not in local db
+async function claudeFallbackSearch(q) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 600,
+            messages: [{
+                role: 'user', content:
+                    'Geocode this city in Canada or USA: "' + q + '"\n' +
+                    'Return a JSON array of up to 5 matches.\n' +
+                    'Each item: {"label":"City, XX","name":"City","province":"XX","lat":0.0,"lon":0.0}\n' +
+                    'Use 2-letter state/province codes. Real places only. Raw JSON array, no markdown.'
+            }]
+        })
+    });
+    if (!res.ok) throw new Error(res.status);
+    const d = await res.json();
+    const txt = ((d.content || []).find(function (b) { return b.type === 'text'; }) || {}).text || '';
+    const clean = txt.replace(/```[a-z]*\n?/gi, '').trim();
+    const arr = JSON.parse(clean);
+    if (!Array.isArray(arr)) throw new Error('bad');
+    return arr.filter(function (r) { return r.lat && r.lon && r.name && r.province; }).map(function (r) {
+        return { label: r.label || (r.name + ', ' + r.province), lat: parseFloat(r.lat), lon: parseFloat(r.lon), name: r.name, province: r.province, fromAI: true };
+    });
+}
 
 function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
-    const [error, setError] = useState('');
-    const timer = useRef(null);
-    const req = useRef(0);
+    const [status, setStatus] = useState(''); // 'ai'|'noresult'|''
     const picking = useRef(false);
+    const timer = useRef(null);
+    const reqId = useRef(0);
 
-    async function handleChange(v) {
+    function handleChange(v) {
         onChange(v);
         clearTimeout(timer.current);
+        setStatus('');
         const q = v.trim();
-        if (q.length < 2) { setResults([]); setOpen(false); setLoading(false); setError(''); return; }
+        if (q.length < 2) { setResults([]); setOpen(false); setLoading(false); return; }
+
+        // Instant local search first
         const local = localSearch(q);
-        if (local.length > 0) { setResults(local); setOpen(true); }
-        setLoading(true); setError('');
-        const id = ++req.current;
-        timer.current = setTimeout(async () => {
-            if (req.current !== id) return;
-            try {
-                const res = await fetch('https://api.anthropic.com/v1/messages', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-                    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, messages: [{ role: 'user', content: `List up to 8 real cities/towns matching "${q}" in Canada or USA. Return ONLY a JSON array. Each item must have label (e.g. "Chillicothe, OH"), lat, lon as numbers. No markdown, no explanation, just the raw JSON array.` }] })
-                });
-                if (!res.ok) { if (req.current !== id) return; setLoading(false); if (local.length === 0) { setError(`Search unavailable (${res.status})`); setOpen(true); } return; }
-                const d = await res.json();
-                if (req.current !== id) return;
-                const txt = ((d.content || []).find(b => b.type === 'text') || {}).text || '';
-                const clean = txt.replace(/```[a-z]*\n?/gi, '').trim();
-                const arr = JSON.parse(clean);
-                if (Array.isArray(arr) && arr.length > 0) { _aiCache[q] = arr; setResults(arr); setOpen(true); }
-                else if (local.length === 0) { setOpen(false); }
+        if (local.length > 0) { setResults(local); setOpen(true); setLoading(false); return; }
+
+        // Not in local db — try Claude
+        if (q.length >= 3) {
+            setResults([]); setLoading(true); setOpen(true);
+            const id = ++reqId.current;
+            timer.current = setTimeout(async function () {
+                if (reqId.current !== id) return;
+                try {
+                    const arr = await claudeFallbackSearch(q);
+                    if (reqId.current !== id) return;
+                    if (arr.length > 0) {
+                        // Save all found cities immediately to local db
+                        arr.forEach(function (r) { saveCustomCity(r.name, r.province, r.lat, r.lon); });
+                        setResults(arr); setStatus('ai');
+                    } else { setStatus('noresult'); }
+                } catch (e) {
+                    if (reqId.current !== id) return;
+                    setStatus('noresult');
+                }
                 setLoading(false);
-            } catch (e) {
-                if (req.current !== id) return;
-                setLoading(false);
-                if (local.length === 0) { setError('No results found — check spelling'); setOpen(true); }
-            }
-        }, local.length > 0 ? 300 : 400);
+            }, 500);
+        }
     }
 
     function pick(item) {
         picking.current = false;
         onChange(item.label);
-        setResults([]); setOpen(false); setLoading(false); setError('');
+        setResults([]); setOpen(false); setLoading(false); setStatus('');
         onSelect && onSelect({ display: item.label, lat: item.lat, lon: item.lon });
     }
 
-    function handleBlur() {
-        setTimeout(() => { if (!picking.current) setOpen(false); }, 300);
+    // Manual save — parse "City, XX" the user typed
+    function manualSave() {
+        const q = value.trim();
+        const comma = q.lastIndexOf(',');
+        if (comma > 0) {
+            const name = q.slice(0, comma).trim();
+            const prov = q.slice(comma + 1).trim().toUpperCase().slice(0, 2);
+            const coords = PROV_COORDS[prov] || [43.5, -80.0];
+            saveCustomCity(name, prov, coords[0], coords[1]);
+            onChange(name + ', ' + prov);
+            setOpen(false); setStatus('');
+            onSelect && onSelect({ display: name + ', ' + prov, lat: coords[0], lon: coords[1] });
+        } else {
+            // No comma — just close and use as-is
+            setOpen(false); setStatus('');
+            onSelect && onSelect({ display: q, lat: 0, lon: 0 });
+        }
     }
 
-    const show = open || (loading && value.trim().length >= 2);
+    function handleBlur() { setTimeout(function () { if (!picking.current) setOpen(false); }, 300); }
+
+    const showDrop = open && (loading || results.length > 0 || status === 'noresult');
 
     return (
         <div style={{ marginBottom: 12 }}>
             <style>{`@keyframes _sp{to{transform:rotate(360deg);}}`}</style>
             <div style={{ position: 'relative' }}>
-                <input value={value} onChange={e => handleChange(e.target.value)} onFocus={() => { if (results.length > 0) setOpen(true); }} onBlur={handleBlur}
-                    placeholder={placeholder} autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
-                    style={iSt(T, { marginBottom: 0, paddingRight: 36, borderRadius: show ? '8px 8px 0 0' : 8, fontSize: 16 })} />
+                <input value={value} onChange={function (e) { handleChange(e.target.value); }}
+                    onFocus={function () { if (results.length > 0 || status === 'noresult') setOpen(true); }}
+                    onBlur={handleBlur}
+                    placeholder={placeholder}
+                    autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
+                    style={iSt(T, { marginBottom: 0, paddingRight: 36, borderRadius: showDrop ? '8px 8px 0 0' : 8, fontSize: 16 })} />
                 <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                    {loading ? <div style={{ width: 15, height: 15, border: `2px solid ${T.border}`, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite' }} /> : <span style={{ fontSize: 14, opacity: .35 }}>🔍</span>}
+                    {loading ? <div style={{ width: 15, height: 15, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite' }} /> : <span style={{ fontSize: 14, opacity: .35 }}>🔍</span>}
                 </div>
             </div>
-            {show && (
-                <div style={{ background: T.card, border: `2px solid ${T.primary}`, borderTop: 'none', borderRadius: '0 0 10px 10px', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,.13)' }}>
-                    {loading && results.length === 0 && (<div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, color: T.textSec, fontSize: 13 }}><div style={{ width: 13, height: 13, border: `2px solid ${T.border}`, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite', flexShrink: 0 }} />Searching cities & towns…</div>)}
-                    {error && !loading && results.length === 0 && (<div style={{ padding: '12px 15px', fontSize: 13, color: '#EF4444' }}>{error}</div>)}
-                    {results.map((item, i) => (
-                        <div key={i} onTouchStart={() => { picking.current = true; }} onTouchEnd={e => { e.preventDefault(); pick(item); }} onMouseDown={e => { e.preventDefault(); pick(item); }}
-                            style={{ padding: '13px 15px', borderBottom: i < results.length - 1 ? `1px solid ${T.border}` : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: T.card, minHeight: 48 }}
-                            onMouseEnter={e => e.currentTarget.style.background = T.bg} onMouseLeave={e => e.currentTarget.style.background = T.card}>
-                            <span style={{ fontSize: 16, flexShrink: 0 }}>📍</span>
-                            <span style={{ fontSize: 15, fontWeight: 600, color: T.text, lineHeight: 1.3 }}>{item.label}</span>
+            {showDrop && (
+                <div style={{ background: T.card, border: '2px solid ' + T.primary, borderTop: 'none', borderRadius: '0 0 10px 10px', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,.13)' }}>
+                    {loading && <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, color: T.textSec, fontSize: 13 }}><div style={{ width: 13, height: 13, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite', flexShrink: 0 }} />Searching online…</div>}
+                    {status === 'noresult' && !loading && (
+                        <div style={{ padding: '12px 15px' }}>
+                            <div style={{ fontSize: 12, color: T.textSec, marginBottom: 8 }}>Not found — type as <b>City, XX</b> (e.g. Ingersoll, ON) then save:</div>
+                            <button
+                                onMouseDown={function (e) { e.preventDefault(); manualSave(); }}
+                                onTouchEnd={function (e) { e.preventDefault(); manualSave(); }}
+                                style={{ width: '100%', background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                ⭐ Save "{value.trim()}" to my cities
+                            </button>
                         </div>
-                    ))}
-                    {!loading && results.length > 0 && (<div style={{ padding: '4px 15px 6px', fontSize: 10, color: T.textSec, borderTop: `1px solid ${T.border}`, background: T.bg }}>🤖 AI-powered · tap to select</div>)}
+                    )}
+                    {results.map(function (item, i) {
+                        return (
+                            <div key={i}
+                                onTouchStart={function () { picking.current = true; }}
+                                onTouchEnd={function (e) { e.preventDefault(); pick(item); }}
+                                onMouseDown={function (e) { e.preventDefault(); pick(item); }}
+                                style={{ padding: '12px 15px', borderBottom: i < results.length - 1 ? '1px solid ' + T.border : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: T.card, minHeight: 48 }}
+                                onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
+                                onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
+                                <span style={{ fontSize: 15, flexShrink: 0 }}>{item.isCustom ? '⭐' : '📍'}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{item.label}</div>
+                                    {item.isCustom && <div style={{ fontSize: 10, color: T.primary }}>⭐ Saved city</div>}
+                                    {item.fromAI && <div style={{ fontSize: 10, color: '#059669' }}>🤖 Found online · saved</div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {!loading && results.length > 0 && (
+                        <div style={{ padding: '4px 15px 6px', fontSize: 10, color: T.textSec, borderTop: '1px solid ' + T.border, background: T.bg }}>
+                            {status === 'ai' ? '🤖 AI search · auto-saved' : '📍 Local database · Canada & USA'}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -593,7 +741,7 @@ function Vehicles({ vehicles, setVehicles }) {
 }
 
 // ═══════════════════════════ ADD TRIP MODAL ══════════════════════
-function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
+function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
     const blank = { trip_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'In Progress', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
     const [f, setF] = useState(blank);
@@ -602,6 +750,18 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
     const [gps, setGps] = useState(false);
     const [distCalced, setDistCalced] = useState(false);
     const [distLoading, setDistLoading] = useState(false);
+    const [dupWarning, setDupWarning] = useState(false);
+
+    // Auto-generate next trip number — finds highest existing numeric suffix and increments
+    function nextTripNumber(existingTrips) {
+        const nums = existingTrips.map(t => {
+            const m = (t.trip_number || '').match(/(\d+)$/);
+            return m ? parseInt(m[1], 10) : 0;
+        });
+        const max = nums.length ? Math.max(...nums) : 0;
+        const next = max + 1;
+        return `TRP-${String(next).padStart(3, '0')}`;
+    }
 
     useEffect(() => {
         if (!visible) return;
@@ -609,21 +769,36 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
             setF({ trip_number: editTrip.trip_number || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '' });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
-            setDistCalced(false);
-        } else { setF(blank); setOC(null); setDC(null); setDistCalced(false); }
+            setDistCalced(false); setDupWarning(false);
+        } else {
+            // Auto-fill next trip number for new trips
+            const auto = nextTripNumber(trips || []);
+            setF({ ...blank, trip_number: auto });
+            setOC(null); setDC(null); setDistCalced(false); setDupWarning(false);
+        }
     }, [visible, editTrip]);
 
-    const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+    const s = (k, v) => {
+        setF(p => ({ ...p, [k]: v }));
+        if (k === 'trip_number') {
+            const dup = (trips || []).some(t =>
+                t.trip_number &&
+                t.trip_number.trim().toLowerCase() === v.trim().toLowerCase() &&
+                (!editTrip || t.id !== editTrip.id)
+            );
+            setDupWarning(dup);
+        }
+    };
 
-    function computeDriving(originLabel, destLabel, oCoord, dCoord) {
-        const result = getDrivingDist(originLabel, destLabel, oCoord.lat, oCoord.lon, dCoord.lat, dCoord.lon);
+    function computeDriving(oCoord, dCoord) {
+        const result = calcDrivingDist(oCoord.lat, oCoord.lon, dCoord.lat, dCoord.lon);
         s('distance', result.miles.toFixed(1));
-        setDistCalced({ miles: result.miles, km: result.km, mode: 'driving' });
+        setDistCalced({ miles: result.miles, km: result.km, source: 'estimate' });
         setDistLoading(false);
     }
 
-    const onOS = c => { setOC(c); if (dC) computeDriving(c.display, dC.display || f.destination, c, dC); };
-    const onDS = c => { setDC(c); if (oC) computeDriving(oC.display || f.origin, c.display, oC, c); };
+    const onOS = c => { setOC(c); if (dC) computeDriving(c, dC); };
+    const onDS = c => { setDC(c); if (oC) computeDriving(oC, c); };
 
     const distNum = parseFloat(f.distance) || 0;
     const rateNum = parseFloat(f.trip_rate) || 0;
@@ -637,14 +812,15 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
             setGps(false);
             const co = { lat: pos.coords.latitude, lon: pos.coords.longitude };
             const label = `${co.lat.toFixed(4)}, ${co.lon.toFixed(4)}`;
-            if (field === 'origin') { s('origin', label); setOC({ ...co, display: label }); if (dC) computeDriving(label, dC.display || f.destination, { ...co, display: label }, dC); }
-            else { s('destination', label); setDC({ ...co, display: label }); if (oC) computeDriving(oC.display || f.origin, label, oC, { ...co, display: label }); }
+            if (field === 'origin') { s('origin', label); setOC({ ...co, display: label }); if (dC) computeDriving({ ...co }, dC); }
+            else { s('destination', label); setDC({ ...co, display: label }); if (oC) computeDriving(oC, { ...co }); }
         }, () => setGps(false));
     }
 
     function save() {
         if (!f.vehicle_id) { alert('Please select a vehicle/truck for this trip.'); return; }
         if (!f.trip_number.trim()) { alert('Please enter a Trip Number.'); return; }
+        if (dupWarning) { alert(`Trip number "${f.trip_number}" already exists. Please use a unique number.`); return; }
         if (!f.origin || !f.destination || !f.pickup_date) { alert('Please fill Origin, Destination, and Pickup Date.'); return; }
         const selectedVehicle = vehicles.find(v => String(v.id) === String(f.vehicle_id));
         onSave({
@@ -682,7 +858,14 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
                 </div>
             )}
             <Lbl c={<span>Trip Number <span style={{ color: '#EF4444' }}>*</span></span>} T={T} />
-            <input value={f.trip_number} onChange={e => s('trip_number', e.target.value)} placeholder="e.g. TRP-001, TRIP-2024-01, BOL#12345" style={iSt(T)} />
+            <input value={f.trip_number} onChange={e => s('trip_number', e.target.value)} placeholder="e.g. TRP-001, TRIP-2024-01, BOL#12345"
+                style={{ ...iSt(T), borderColor: dupWarning ? '#EF4444' : undefined, marginBottom: dupWarning ? 4 : 12 }} />
+            {dupWarning && (
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#DC2626', fontWeight: 600 }}>⚠️ Trip #{f.trip_number} already exists</span>
+                    <button onClick={() => s('trip_number', nextTripNumber(trips || []))} style={{ fontSize: 11, color: T.primary, background: 'none', border: `1px solid ${T.primary}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Use next →</button>
+                </div>
+            )}
             <Lbl c="Origin" T={T} />
             <PlacesAuto value={f.origin} onChange={v => { s('origin', v); if (!v) { setOC(null); setDistCalced(false); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onOS} />
             {gpsBtn('origin')}
@@ -696,7 +879,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles }) {
                     <div style={{ flex: 1 }}>
                         <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{parseFloat(f.distance).toFixed(1)} miles</span>
                         <span style={{ fontSize: 12, color: '#555', marginLeft: 8 }}>({distCalced.km.toFixed(1)} km)</span>
-                        <div style={{ fontSize: 11, color: '#065F46', marginTop: 2 }}>🚛 Estimated driving distance</div>
+                        <div style={{ fontSize: 11, color: '#065F46', marginTop: 2 }}>📐 Estimated driving distance</div>
                     </div>
                     <button onClick={() => { setDistCalced(false); s('distance', ''); }} style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap' }}>Edit</button>
                 </div>
@@ -1074,7 +1257,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
                 ))}
             </div>
             <button onClick={() => { setEdit(null); setShow(true); }} style={{ position: 'absolute', right: 20, bottom: 76, width: 56, height: 56, borderRadius: 28, background: T.primary, border: 'none', color: '#fff', fontSize: 28, cursor: 'pointer', boxShadow: `0 4px 16px ${T.primary}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>+</button>
-            <AddTripModal visible={show} onClose={() => { setShow(false); setEdit(null); }} onSave={save} editTrip={edit} T={T} vehicles={vehicles} />
+            <AddTripModal visible={show} onClose={() => { setShow(false); setEdit(null); }} onSave={save} editTrip={edit} T={T} vehicles={vehicles} trips={trips} />
         </div>
     );
 }
