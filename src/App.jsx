@@ -334,9 +334,18 @@ const _cityCache = { list: [] };
 function saveCustomCity(name, province, lat, lon) {
     try {
         const key = (name + '|' + province).toLowerCase();
-        const exists = _cityCache.list.some(function (c) { return ((c[0] || '') + '|' + (c[1] || '')).toLowerCase() === key; });
-        if (exists) return;
-        _cityCache.list.push([name, province, parseFloat(lat) || 0, parseFloat(lon) || 0]);
+        const existingIdx = _cityCache.list.findIndex(function (c) {
+            return ((c[0] || '') + '|' + (c[1] || '')).toLowerCase() === key;
+        });
+        const parsedLat = parseFloat(lat) || 0;
+        const parsedLon = parseFloat(lon) || 0;
+        if (existingIdx >= 0) {
+            // Update coords in place — this is the fix for coords resetting
+            _cityCache.list[existingIdx] = [name, province, parsedLat, parsedLon];
+        } else {
+            // New city — add it
+            _cityCache.list.push([name, province, parsedLat, parsedLon]);
+        }
         localStorage.setItem('tl_custom_cities', JSON.stringify(_cityCache.list));
     } catch (e) { }
 }
@@ -370,8 +379,14 @@ function localSearch(q) {
     const comma = raw.indexOf(',');
     const cityPart = comma > 0 ? raw.slice(0, comma).trim() : raw;
     const provPart = comma > 0 ? raw.slice(comma + 1).trim() : '';
-    const builtInKeys = new Set(CITIES.map(function (c) { return c[0] + '|' + c[1]; }));
-    const all = [...CITIES, ...getCustomCities()];
+    // Custom cities override built-in coords for same name+province
+    const customKeys = new Set(getCustomCities().map(function (c) { return (c[0] + '|' + c[1]).toLowerCase(); }));
+    // Built-in cities — skip any that have a custom override
+    const filteredBuiltIn = CITIES.filter(function (c) {
+        return !customKeys.has((c[0] + '|' + c[1]).toLowerCase());
+    });
+    // Custom comes first so dedup works, then remaining built-ins
+    const all = [...getCustomCities(), ...filteredBuiltIn];
     const exact = [], starts = [], contains = [], fuzzy = [];
     all.forEach(function (row) {
         const n = row[0], p = row[1], lat = row[2], lon = row[3];
@@ -572,18 +587,89 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
     }
 
     // Coord input style
-    const cInp = { border: '1px solid ' + T.border, borderRadius: 7, padding: '9px 10px', fontSize: 14, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
+    const cInp = { border: '1px solid ' + T.border, borderRadius: 7, padding: '9px 10px', fontSize: 16, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
 
     const showDrop = open && (loading || results.length > 0 || status === 'noresult');
+    // blockBlur prevents onBlur from closing dropdown when tapping inside it
+    const blockBlur = useRef(false);
 
     return (
-        <div style={{ marginBottom: 12 }} ref={wrapRef}>
+        <div style={{ marginBottom: 12 }}>
             <style>{`@keyframes _sp{to{transform:rotate(360deg);}}`}</style>
+
+            {/* ── Full-screen coord editor modal (z-index above Sheet) ── */}
+            {editTarget && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.6)' }}
+                    onTouchStart={function (e) { e.stopPropagation(); }}>
+                    <div style={{ flex: 1 }} onTouchEnd={function () { setEditTarget(null); }} />
+                    <div style={{ background: T.card, borderRadius: '20px 20px 0 0', padding: 20, paddingBottom: 40, boxShadow: '0 -4px 24px rgba(0,0,0,.2)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                            <div>
+                                <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>📍 Update Coordinates</div>
+                                <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>{editTarget.label}</div>
+                            </div>
+                            <button onTouchEnd={function (e) { e.preventDefault(); setEditTarget(null); }}
+                                onClick={function () { setEditTarget(null); }}
+                                style={{ background: T.bg, border: 'none', borderRadius: 20, width: 32, height: 32, fontSize: 18, color: T.textSec, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                        </div>
+                        {editTarget.lat && editTarget.lon ? (
+                            <div style={{ background: T.bg, borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: T.textSec }}>
+                                Current: {parseFloat(editTarget.lat).toFixed(6)}, {parseFloat(editTarget.lon).toFixed(6)}
+                            </div>
+                        ) : null}
+                        <div style={{ fontSize: 12, color: T.textSec, marginBottom: 12, lineHeight: 1.5, background: '#FEF3C7', borderRadius: 8, padding: '8px 12px' }}>
+                            💡 Long-press your city on <b>Google Maps</b> → tap the pin → copy the coordinates shown.
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.textSec, marginBottom: 6 }}>LATITUDE</div>
+                                <input value={editLat}
+                                    onChange={function (e) { setEditLat(e.target.value); }}
+                                    placeholder="e.g. 43.2557"
+                                    style={cInp}
+                                    type="text"
+                                    inputMode="decimal"
+                                    autoComplete="off" />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: T.textSec, marginBottom: 6 }}>LONGITUDE</div>
+                                <input value={editLon}
+                                    onChange={function (e) { setEditLon(e.target.value); }}
+                                    placeholder="e.g. -79.8711"
+                                    style={cInp}
+                                    type="text"
+                                    inputMode="decimal"
+                                    autoComplete="off" />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                            <button
+                                onClick={function () { pickWithCoords(editTarget, editLat, editLon); }}
+                                style={{ flex: 2, background: T.primary, color: '#fff', border: 'none', borderRadius: 12, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+                                ✅ Save & Select
+                            </button>
+                            <button
+                                onClick={function () { pick(editTarget); }}
+                                style={{ flex: 1, background: T.bg, color: T.textSec, border: '1px solid ' + T.border, borderRadius: 12, padding: '14px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                                Skip
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Main input */}
             <div style={{ position: 'relative' }}>
-                <input value={value} onChange={function (e) { handleChange(e.target.value); }}
-                    onFocus={function () { if (results.length > 0 || status === 'noresult') { setEditTarget(null); setOpen(true); } }}
-                    onBlur={function () { setTimeout(function () { if (!picking.current) setOpen(false); }, 300); }}
+                <input value={value}
+                    onChange={function (e) { handleChange(e.target.value); }}
+                    onFocus={function () { if (results.length > 0 || status === 'noresult') { setOpen(true); } }}
+                    onBlur={function () {
+                        // Don't close if user is interacting with dropdown or edit button
+                        setTimeout(function () {
+                            if (!blockBlur.current) setOpen(false);
+                            blockBlur.current = false;
+                        }, 350);
+                    }}
                     placeholder={placeholder}
                     autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
                     style={iSt(T, { marginBottom: 0, paddingRight: 36, borderRadius: showDrop ? '8px 8px 0 0' : 8, fontSize: 16 })} />
@@ -594,7 +680,10 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
 
             {/* Dropdown */}
             {showDrop && (
-                <div style={{ background: T.card, border: '2px solid ' + T.primary, borderTop: 'none', borderRadius: '0 0 10px 10px', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,.13)' }}>
+                <div
+                    onTouchStart={function () { blockBlur.current = true; }}
+                    onMouseDown={function () { blockBlur.current = true; }}
+                    style={{ background: T.card, border: '2px solid ' + T.primary, borderTop: 'none', borderRadius: '0 0 10px 10px', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,.13)' }}>
                     {loading && <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, color: T.textSec, fontSize: 13 }}><div style={{ width: 13, height: 13, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite', flexShrink: 0 }} />Searching…</div>}
                     {status === 'noresult' && !loading && <ManualSaveForm value={value} T={T} onSave={function (name, prov, latStr, lonStr) {
                         const lat = parseFloat(latStr), lon = parseFloat(lonStr);
@@ -608,65 +697,15 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
                     {results.map(function (item, i) {
                         return (
                             <ResultRow key={i} item={item} isLast={i === results.length - 1} T={T}
-                                onPick={function (it) { picking.current = true; pick(it); }}
-                                onEdit={openEdit} />
+                                onPick={function (it) { blockBlur.current = false; pick(it); }}
+                                onEdit={function (it) { blockBlur.current = false; openEdit(it); }} />
                         );
                     })}
                     {!loading && results.length > 0 && (
                         <div style={{ padding: '4px 15px 6px', fontSize: 10, color: T.textSec, borderTop: '1px solid ' + T.border, background: T.bg }}>
-                            {status === 'ai' ? '🤖 AI search · auto-saved' : '📍 Local database'} · tap ✏️ to update coordinates
+                            {status === 'ai' ? '🤖 AI search' : '📍 Local database'} · tap ✏️ to edit coordinates
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* ── Inline coord editor — appears BELOW dropdown when ✏️ tapped ── */}
-            {editTarget && (
-                <div style={{ marginTop: 6, background: T.card, border: '2px solid ' + T.primary, borderRadius: 12, padding: 14, boxShadow: '0 4px 16px rgba(0,0,0,.12)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>📍 Update Coordinates</div>
-                            <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>{editTarget.label}</div>
-                        </div>
-                        <button onMouseDown={function (e) { e.preventDefault(); setEditTarget(null); }}
-                            onTouchEnd={function (e) { e.preventDefault(); setEditTarget(null); }}
-                            style={{ background: 'none', border: 'none', fontSize: 18, color: T.textSec, cursor: 'pointer', padding: 4 }}>✕</button>
-                    </div>
-                    {/* Current coords display */}
-                    {editTarget.lat && editTarget.lon ? (
-                        <div style={{ background: T.bg, borderRadius: 8, padding: '8px 10px', marginBottom: 10, fontSize: 11, color: T.textSec }}>
-                            Current: Lat {parseFloat(editTarget.lat).toFixed(6)} · Lon {parseFloat(editTarget.lon).toFixed(6)}
-                        </div>
-                    ) : null}
-                    <div style={{ fontSize: 11, color: T.textSec, marginBottom: 8, lineHeight: 1.5 }}>
-                        💡 Optional — find exact coords by long-pressing your city on <b>Google Maps</b>, then tap the pin.
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                        <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 4 }}>Latitude</div>
-                            <input value={editLat} onChange={function (e) { setEditLat(e.target.value.replace(/[^0-9.\-]/g, '')); }}
-                                placeholder="e.g. 43.2557" style={cInp} inputMode="decimal" />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 4 }}>Longitude</div>
-                            <input value={editLon} onChange={function (e) { setEditLon(e.target.value.replace(/[^0-9.\-]/g, '')); }}
-                                placeholder="e.g. -79.8711" style={cInp} inputMode="decimal" />
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                            onMouseDown={function (e) { e.preventDefault(); pickWithCoords(editTarget, editLat, editLon); }}
-                            onTouchEnd={function (e) { e.preventDefault(); pickWithCoords(editTarget, editLat, editLon); }}
-                            style={{ flex: 2, background: T.primary, color: '#fff', border: 'none', borderRadius: 9, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ✅ Select
-                        </button>
-                        <button
-                            onMouseDown={function (e) { e.preventDefault(); pick(editTarget); }}
-                            onTouchEnd={function (e) { e.preventDefault(); pick(editTarget); }}
-                            style={{ flex: 1, background: T.card, color: T.textSec, border: '1px solid ' + T.border, borderRadius: 9, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            Skip
-                        </button>
-                    </div>
                 </div>
             )}
         </div>
