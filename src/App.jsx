@@ -24,8 +24,8 @@ function useLocalStorage(key, initialValue) {
 const EXPENSE_TYPES = ['Fuel', 'DEF', 'Maintenance', 'Toll', 'Food', 'Parking', 'Other'];
 const EXPENSE_COLORS = { Fuel: '#F59E0B', DEF: '#8B5CF6', Maintenance: '#EF4444', Toll: '#8B5CF6', Food: '#10B981', Parking: '#3B82F6', Other: '#6B7280' };
 const EXPENSE_ICONS = { Fuel: '⛽', DEF: '🛢️', Maintenance: '🔧', Toll: '💰', Food: '🍽️', Parking: '🅿️', Other: '🧾' };
-const TRIP_STATUSES = ['In Progress', 'Completed', 'Cancelled'];
-const STATUS_COLORS = { 'In Progress': '#F59E0B', Completed: '#2563EB', Cancelled: '#DC2626' };
+const TRIP_STATUSES = ['Scheduled', 'In Progress', 'Completed', 'Cancelled'];
+const STATUS_COLORS = { Scheduled: '#7C3AED', 'In Progress': '#F59E0B', Completed: '#2563EB', Cancelled: '#DC2626' };
 const US_STATES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
 const CA_PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
 const TOLLS = [
@@ -377,8 +377,7 @@ function localSearch(q) {
         const n = row[0], p = row[1], lat = row[2], lon = row[3];
         const nl = n.toLowerCase(), pl = p.toLowerCase();
         if (provPart && !pl.startsWith(provPart.toLowerCase())) return;
-        const isCustom = !builtInKeys.has(n + '|' + p);
-        const entry = { label: n + ', ' + p, lat: lat, lon: lon, isCustom: isCustom };
+        const entry = { label: n + ', ' + p, lat: lat, lon: lon };
         if (nl === cityPart) exact.push(entry);
         else if (nl.startsWith(cityPart)) starts.push(entry);
         else if (nl.includes(cityPart)) contains.push(entry);
@@ -423,27 +422,113 @@ async function claudeFallbackSearch(q) {
     });
 }
 
+// ── Manual save form — shown when city not found ──────────────────
+function ManualSaveForm({ value, T, onSave }) {
+    const q = value.trim();
+    const comma = q.lastIndexOf(',');
+    const defaultName = comma > 0 ? q.slice(0, comma).trim() : q;
+    const defaultProv = comma > 0 ? q.slice(comma + 1).trim().toUpperCase().slice(0, 2) : '';
+    const [name, setName] = useState(defaultName);
+    const [prov, setProv] = useState(defaultProv);
+    const [lat, setLat] = useState('');
+    const [lon, setLon] = useState('');
+    const inpSt = { border: '1px solid ' + T.border, borderRadius: 7, padding: '7px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
+    function doSave(e) { e.preventDefault(); if (!name.trim()) return; onSave(name, prov, lat, lon); }
+    return (
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid ' + T.border }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textSec, marginBottom: 8, textTransform: 'uppercase', letterSpacing: .4 }}>
+                📍 Save to my cities
+            </div>
+            {/* City name + Province */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <div style={{ flex: 2 }}>
+                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City Name</div>
+                    <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="e.g. Ingersoll" style={inpSt} />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Province/State</div>
+                    <input value={prov} onChange={function (e) { setProv(e.target.value.toUpperCase().slice(0, 2)); }} placeholder="ON" style={inpSt} maxLength={2} />
+                </div>
+            </div>
+            {/* Optional lat / lon */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Latitude <span style={{ color: T.textSec, fontWeight: 400 }}>(optional)</span></div>
+                    <input value={lat} onChange={function (e) { setLat(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. 43.04" style={inpSt} inputMode="decimal" />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Longitude <span style={{ color: T.textSec, fontWeight: 400 }}>(optional)</span></div>
+                    <input value={lon} onChange={function (e) { setLon(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. -80.88" style={inpSt} inputMode="decimal" />
+                </div>
+            </div>
+            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 8, lineHeight: 1.4 }}>
+                💡 Lat/Lon is optional — find it on <b>Google Maps</b> by long-pressing your city. More accurate = better distance calculation.
+            </div>
+            <button onMouseDown={doSave} onTouchEnd={function (e) { e.preventDefault(); doSave(e); }}
+                style={{ width: '100%', background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                💾 Save City
+            </button>
+        </div>
+    );
+}
+
+// ── Result row — simple tap to select, coord display only ──────────
+function ResultRow({ item, isLast, T, onPick, onEdit }) {
+    return (
+        <div style={{ borderBottom: isLast ? 'none' : '1px solid ' + T.border }}>
+            <div style={{ display: 'flex', alignItems: 'center', background: T.card }}>
+                {/* Main tap area — selects the city */}
+                <div
+                    onMouseDown={function (e) { e.preventDefault(); onPick(item); }}
+                    onTouchEnd={function (e) { e.preventDefault(); onPick(item); }}
+                    style={{ flex: 1, padding: '11px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, minHeight: 46 }}
+                    onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
+                    onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
+                    <span style={{ fontSize: 14, flexShrink: 0 }}>📍</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{item.label}</div>
+                        <div style={{ fontSize: 10, color: T.textSec, marginTop: 1 }}>
+                            {item.lat && item.lon
+                                ? 'Lat ' + parseFloat(item.lat).toFixed(4) + ' · Lon ' + parseFloat(item.lon).toFixed(4)
+                                : 'No coordinates · tap ✏️ to add'}
+                            {item.fromAI ? <span style={{ color: '#059669', marginLeft: 4 }}>· 🤖</span> : null}
+                        </div>
+                    </div>
+                </div>
+                {/* Edit button — separate from pick area */}
+                <div
+                    onMouseDown={function (e) { e.preventDefault(); e.stopPropagation(); onEdit(item); }}
+                    onTouchEnd={function (e) { e.preventDefault(); e.stopPropagation(); onEdit(item); }}
+                    style={{ padding: '0 14px', cursor: 'pointer', color: T.textSec, fontSize: 16, flexShrink: 0, alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>
+                    ✏️
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
-    const [status, setStatus] = useState(''); // 'ai'|'noresult'|''
+    const [status, setStatus] = useState('');
+    // editTarget: the city being coord-edited, shown BELOW the dropdown
+    const [editTarget, setEditTarget] = useState(null);
+    const [editLat, setEditLat] = useState('');
+    const [editLon, setEditLon] = useState('');
     const picking = useRef(false);
     const timer = useRef(null);
     const reqId = useRef(0);
+    const wrapRef = useRef(null);
 
     function handleChange(v) {
         onChange(v);
         clearTimeout(timer.current);
-        setStatus('');
+        setStatus(''); setEditTarget(null);
         const q = v.trim();
         if (q.length < 2) { setResults([]); setOpen(false); setLoading(false); return; }
-
-        // Instant local search first
         const local = localSearch(q);
         if (local.length > 0) { setResults(local); setOpen(true); setLoading(false); return; }
-
-        // Not in local db — try Claude
         if (q.length >= 3) {
             setResults([]); setLoading(true); setOpen(true);
             const id = ++reqId.current;
@@ -452,15 +537,9 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
                 try {
                     const arr = await claudeFallbackSearch(q);
                     if (reqId.current !== id) return;
-                    if (arr.length > 0) {
-                        // Save all found cities immediately to local db
-                        arr.forEach(function (r) { saveCustomCity(r.name, r.province, r.lat, r.lon); });
-                        setResults(arr); setStatus('ai');
-                    } else { setStatus('noresult'); }
-                } catch (e) {
-                    if (reqId.current !== id) return;
-                    setStatus('noresult');
-                }
+                    if (arr.length > 0) { arr.forEach(function (r) { saveCustomCity(r.name, r.province, r.lat, r.lon); }); setResults(arr); setStatus('ai'); }
+                    else setStatus('noresult');
+                } catch (e) { if (reqId.current !== id) return; setStatus('noresult'); }
                 setLoading(false);
             }, 500);
         }
@@ -469,40 +548,42 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
     function pick(item) {
         picking.current = false;
         onChange(item.label);
-        setResults([]); setOpen(false); setLoading(false); setStatus('');
+        setResults([]); setOpen(false); setLoading(false); setStatus(''); setEditTarget(null);
         onSelect && onSelect({ display: item.label, lat: item.lat, lon: item.lon });
     }
 
-    // Manual save — parse "City, XX" the user typed
-    function manualSave() {
-        const q = value.trim();
-        const comma = q.lastIndexOf(',');
-        if (comma > 0) {
-            const name = q.slice(0, comma).trim();
-            const prov = q.slice(comma + 1).trim().toUpperCase().slice(0, 2);
-            const coords = PROV_COORDS[prov] || [43.5, -80.0];
-            saveCustomCity(name, prov, coords[0], coords[1]);
-            onChange(name + ', ' + prov);
-            setOpen(false); setStatus('');
-            onSelect && onSelect({ display: name + ', ' + prov, lat: coords[0], lon: coords[1] });
-        } else {
-            // No comma — just close and use as-is
-            setOpen(false); setStatus('');
-            onSelect && onSelect({ display: q, lat: 0, lon: 0 });
-        }
+    function pickWithCoords(item, latStr, lonStr) {
+        const lat = parseFloat(latStr);
+        const lon = parseFloat(lonStr);
+        const hasCoords = !isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0;
+        // Update saved coords
+        const parts = item.label.split(',');
+        const n = (parts[0] || '').trim();
+        const p = (parts[1] || '').trim();
+        if (hasCoords && n && p) saveCustomCity(n, p, lat, lon);
+        pick({ ...item, lat: hasCoords ? lat : item.lat, lon: hasCoords ? lon : item.lon });
     }
 
-    function handleBlur() { setTimeout(function () { if (!picking.current) setOpen(false); }, 300); }
+    function openEdit(item) {
+        setEditTarget(item);
+        setEditLat(item.lat ? String(item.lat) : '');
+        setEditLon(item.lon ? String(item.lon) : '');
+        setOpen(false); // close dropdown so keyboard doesn't fight
+    }
+
+    // Coord input style
+    const cInp = { border: '1px solid ' + T.border, borderRadius: 7, padding: '9px 10px', fontSize: 14, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
 
     const showDrop = open && (loading || results.length > 0 || status === 'noresult');
 
     return (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12 }} ref={wrapRef}>
             <style>{`@keyframes _sp{to{transform:rotate(360deg);}}`}</style>
+            {/* Main input */}
             <div style={{ position: 'relative' }}>
                 <input value={value} onChange={function (e) { handleChange(e.target.value); }}
-                    onFocus={function () { if (results.length > 0 || status === 'noresult') setOpen(true); }}
-                    onBlur={handleBlur}
+                    onFocus={function () { if (results.length > 0 || status === 'noresult') { setEditTarget(null); setOpen(true); } }}
+                    onBlur={function () { setTimeout(function () { if (!picking.current) setOpen(false); }, 300); }}
                     placeholder={placeholder}
                     autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
                     style={iSt(T, { marginBottom: 0, paddingRight: 36, borderRadius: showDrop ? '8px 8px 0 0' : 8, fontSize: 16 })} />
@@ -510,43 +591,82 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
                     {loading ? <div style={{ width: 15, height: 15, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite' }} /> : <span style={{ fontSize: 14, opacity: .35 }}>🔍</span>}
                 </div>
             </div>
+
+            {/* Dropdown */}
             {showDrop && (
                 <div style={{ background: T.card, border: '2px solid ' + T.primary, borderTop: 'none', borderRadius: '0 0 10px 10px', overflow: 'hidden', boxShadow: '0 8px 20px rgba(0,0,0,.13)' }}>
-                    {loading && <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, color: T.textSec, fontSize: 13 }}><div style={{ width: 13, height: 13, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite', flexShrink: 0 }} />Searching online…</div>}
-                    {status === 'noresult' && !loading && (
-                        <div style={{ padding: '12px 15px' }}>
-                            <div style={{ fontSize: 12, color: T.textSec, marginBottom: 8 }}>Not found — type as <b>City, XX</b> (e.g. Ingersoll, ON) then save:</div>
-                            <button
-                                onMouseDown={function (e) { e.preventDefault(); manualSave(); }}
-                                onTouchEnd={function (e) { e.preventDefault(); manualSave(); }}
-                                style={{ width: '100%', background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                ⭐ Save "{value.trim()}" to my cities
-                            </button>
-                        </div>
-                    )}
+                    {loading && <div style={{ padding: '12px 15px', display: 'flex', alignItems: 'center', gap: 10, color: T.textSec, fontSize: 13 }}><div style={{ width: 13, height: 13, border: '2px solid ' + T.border, borderTopColor: T.primary, borderRadius: '50%', animation: '_sp .65s linear infinite', flexShrink: 0 }} />Searching…</div>}
+                    {status === 'noresult' && !loading && <ManualSaveForm value={value} T={T} onSave={function (name, prov, latStr, lonStr) {
+                        const lat = parseFloat(latStr), lon = parseFloat(lonStr);
+                        const hasCoords = !isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0;
+                        const coords = hasCoords ? [lat, lon] : (PROV_COORDS[prov.toUpperCase()] || [43.5, -80.0]);
+                        const label = name.trim() + ', ' + prov.trim().toUpperCase();
+                        saveCustomCity(name.trim(), prov.trim().toUpperCase(), coords[0], coords[1]);
+                        onChange(label); setOpen(false); setStatus('');
+                        onSelect && onSelect({ display: label, lat: coords[0], lon: coords[1] });
+                    }} />}
                     {results.map(function (item, i) {
                         return (
-                            <div key={i}
-                                onTouchStart={function () { picking.current = true; }}
-                                onTouchEnd={function (e) { e.preventDefault(); pick(item); }}
-                                onMouseDown={function (e) { e.preventDefault(); pick(item); }}
-                                style={{ padding: '12px 15px', borderBottom: i < results.length - 1 ? '1px solid ' + T.border : 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, background: T.card, minHeight: 48 }}
-                                onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
-                                onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
-                                <span style={{ fontSize: 15, flexShrink: 0 }}>{item.isCustom ? '⭐' : '📍'}</span>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{item.label}</div>
-                                    {item.isCustom && <div style={{ fontSize: 10, color: T.primary }}>⭐ Saved city</div>}
-                                    {item.fromAI && <div style={{ fontSize: 10, color: '#059669' }}>🤖 Found online · saved</div>}
-                                </div>
-                            </div>
+                            <ResultRow key={i} item={item} isLast={i === results.length - 1} T={T}
+                                onPick={function (it) { picking.current = true; pick(it); }}
+                                onEdit={openEdit} />
                         );
                     })}
                     {!loading && results.length > 0 && (
                         <div style={{ padding: '4px 15px 6px', fontSize: 10, color: T.textSec, borderTop: '1px solid ' + T.border, background: T.bg }}>
-                            {status === 'ai' ? '🤖 AI search · auto-saved' : '📍 Local database · Canada & USA'}
+                            {status === 'ai' ? '🤖 AI search · auto-saved' : '📍 Local database'} · tap ✏️ to update coordinates
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Inline coord editor — appears BELOW dropdown when ✏️ tapped ── */}
+            {editTarget && (
+                <div style={{ marginTop: 6, background: T.card, border: '2px solid ' + T.primary, borderRadius: 12, padding: 14, boxShadow: '0 4px 16px rgba(0,0,0,.12)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.primary }}>📍 Update Coordinates</div>
+                            <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>{editTarget.label}</div>
+                        </div>
+                        <button onMouseDown={function (e) { e.preventDefault(); setEditTarget(null); }}
+                            onTouchEnd={function (e) { e.preventDefault(); setEditTarget(null); }}
+                            style={{ background: 'none', border: 'none', fontSize: 18, color: T.textSec, cursor: 'pointer', padding: 4 }}>✕</button>
+                    </div>
+                    {/* Current coords display */}
+                    {editTarget.lat && editTarget.lon ? (
+                        <div style={{ background: T.bg, borderRadius: 8, padding: '8px 10px', marginBottom: 10, fontSize: 11, color: T.textSec }}>
+                            Current: Lat {parseFloat(editTarget.lat).toFixed(6)} · Lon {parseFloat(editTarget.lon).toFixed(6)}
+                        </div>
+                    ) : null}
+                    <div style={{ fontSize: 11, color: T.textSec, marginBottom: 8, lineHeight: 1.5 }}>
+                        💡 Optional — find exact coords by long-pressing your city on <b>Google Maps</b>, then tap the pin.
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 4 }}>Latitude</div>
+                            <input value={editLat} onChange={function (e) { setEditLat(e.target.value.replace(/[^0-9.\-]/g, '')); }}
+                                placeholder="e.g. 43.2557" style={cInp} inputMode="decimal" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 4 }}>Longitude</div>
+                            <input value={editLon} onChange={function (e) { setEditLon(e.target.value.replace(/[^0-9.\-]/g, '')); }}
+                                placeholder="e.g. -79.8711" style={cInp} inputMode="decimal" />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                            onMouseDown={function (e) { e.preventDefault(); pickWithCoords(editTarget, editLat, editLon); }}
+                            onTouchEnd={function (e) { e.preventDefault(); pickWithCoords(editTarget, editLat, editLon); }}
+                            style={{ flex: 2, background: T.primary, color: '#fff', border: 'none', borderRadius: 9, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            ✅ Select
+                        </button>
+                        <button
+                            onMouseDown={function (e) { e.preventDefault(); pick(editTarget); }}
+                            onTouchEnd={function (e) { e.preventDefault(); pick(editTarget); }}
+                            style={{ flex: 1, background: T.card, color: T.textSec, border: '1px solid ' + T.border, borderRadius: 9, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Skip
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -743,7 +863,7 @@ function Vehicles({ vehicles, setVehicles }) {
 // ═══════════════════════════ ADD TRIP MODAL ══════════════════════
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
-    const blank = { trip_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'In Progress', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
+    const blank = { trip_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
     const [f, setF] = useState(blank);
     const [oC, setOC] = useState(null);
     const [dC, setDC] = useState(null);
@@ -1013,6 +1133,7 @@ function Dashboard({ trips, expenses, navigate }) {
     const mT = useMemo(() => trips.filter(t => t.trip_date && t.trip_date.substring(0, 7) === cm && t.status === 'Completed'), [trips, cm]);
     const mTAll = useMemo(() => trips.filter(t => t.trip_date && t.trip_date.substring(0, 7) === cm), [trips, cm]);
     const mInProgress = useMemo(() => trips.filter(t => t.status === 'In Progress').length, [trips]);
+    const mScheduled = useMemo(() => trips.filter(t => t.status === 'Scheduled').length, [trips]);
     const mE = useMemo(() => expenses.filter(e => e.expense_date && e.expense_date.substring(0, 7) === cm), [expenses, cm]);
     const mMiRaw = useMemo(() => mT.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [mT]);
     const mMi = useKm ? (mMiRaw * 1.60934) : mMiRaw;
@@ -1083,7 +1204,18 @@ function Dashboard({ trips, expenses, navigate }) {
                 </div>
             )}
 
-            {/* In Progress alert — tappable */}
+            {/* Scheduled alert */}
+            {mScheduled > 0 && (
+                <div onClick={() => navigate('Trips', { filter: 'Scheduled' })} style={{ margin: '0 16px 8px', background: '#F5F3FF', border: '1.5px solid #7C3AED', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <span style={{ fontSize: 22 }}>📅</span>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#5B21B6' }}>{mScheduled} Trip{mScheduled > 1 ? 's' : ''} Scheduled</div>
+                        <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 1 }}>Upcoming trips planned in advance</div>
+                    </div>
+                    <span style={{ fontSize: 16, color: '#7C3AED' }}>›</span>
+                </div>
+            )}
+            {/* In Progress alert */}
             {mInProgress > 0 && (
                 <div onClick={() => navigate('Trips', { filter: 'In Progress' })} style={{ margin: '0 16px 10px', background: '#FEF3C7', border: '1.5px solid #F59E0B', borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
                     <span style={{ fontSize: 22 }}>🚛</span>
@@ -1187,11 +1319,11 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
     const [show, setShow] = useState(false);
     const [edit, setEdit] = useState(null);
     const [confirmId, setConfirmId] = useState(null);
-    const fColors = { All: T.primary, 'In Progress': '#F59E0B', Completed: '#2563EB', Cancelled: '#DC2626' };
-    const STATUS_ORDER = { 'In Progress': 0, 'Completed': 1, 'Cancelled': 2 };
+    const fColors = { All: T.primary, Scheduled: '#7C3AED', 'In Progress': '#F59E0B', Completed: '#2563EB', Cancelled: '#DC2626' };
+    const STATUS_ORDER = { Scheduled: 0, 'In Progress': 1, 'Completed': 2, 'Cancelled': 3 };
     const filtered = useMemo(() => {
         const base = filter === 'All' ? trips : trips.filter(t => t.status === filter);
-        return [...base].sort((a, b) => { const sa = STATUS_ORDER[a.status] ?? 1; const sb = STATUS_ORDER[b.status] ?? 1; if (sa !== sb) return sa - sb; return (b.trip_date || '').localeCompare(a.trip_date || ''); });
+        return [...base].sort((a, b) => { const sa = STATUS_ORDER[a.status] ?? 2; const sb = STATUS_ORDER[b.status] ?? 2; if (sa !== sb) return sa - sb; return (b.trip_date || '').localeCompare(a.trip_date || ''); });
     }, [trips, filter]);
     function save(data) { if (edit) setTrips(ts => ts.map(t => t.id === edit.id ? { ...t, ...data } : t)); else setTrips(ts => [{ ...data, id: Date.now() }, ...ts]); setShow(false); setEdit(null); }
     function del(id) { setTrips(ts => ts.filter(t => t.id !== id)); setConfirmId(null); }
@@ -1200,7 +1332,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
             <div style={{ background: T.primary, padding: '20px 20px 16px', flexShrink: 0 }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 14 }}>My Trips</div>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-                    {['All', 'In Progress', 'Completed', 'Cancelled'].map(f => { const a = filter === f; return <button key={f} onClick={() => setFilter(f)} style={{ padding: '7px 14px', borderRadius: 20, border: 'none', background: a ? '#fff' : 'rgba(255,255,255,.2)', color: a ? (fColors[f] || T.primary) : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{f}</button>; })}
+                    {['All', 'Scheduled', 'In Progress', 'Completed', 'Cancelled'].map(f => { const a = filter === f; return <button key={f} onClick={() => setFilter(f)} style={{ padding: '7px 14px', borderRadius: 20, border: 'none', background: a ? '#fff' : 'rgba(255,255,255,.2)', color: a ? (fColors[f] || T.primary) : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{f}</button>; })}
                 </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px' }}>
