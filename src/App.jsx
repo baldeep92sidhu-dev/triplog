@@ -1800,8 +1800,38 @@ function Settings({ vc, setVc }) {
 function TabBar({ active, onPress, T }) {
     const tabs = [{ k: 'Dashboard', i: '📊', l: 'Dashboard' }, { k: 'Trips', i: '🚛', l: 'Trips' }, { k: 'Vehicles', i: '🔧', l: 'Vehicles' }, { k: 'Reports', i: '📈', l: 'Reports' }, { k: 'Settings', i: '⚙️', l: 'Settings' }];
     return (
-        <div style={{ display: 'flex', background: T.card, borderTop: `1px solid ${T.border}`, boxShadow: '0 -2px 12px rgba(0,0,0,.08)', flexShrink: 0, zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-            {tabs.map(tab => (<button key={tab.k} onClick={() => onPress(tab.k)} style={{ flex: 1, paddingTop: 10, paddingBottom: 8, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minHeight: 56 }}><span style={{ fontSize: 22 }}>{tab.i}</span><span style={{ fontSize: 10, fontWeight: 600, color: active === tab.k ? T.primary : '#94A3B8' }}>{tab.l}</span></button>))}
+        <div style={{
+            display: 'flex',
+            background: T.card,
+            borderTop: `1px solid ${T.border}`,
+            boxShadow: '0 -2px 12px rgba(0,0,0,.08)',
+            flexShrink: 0,
+            zIndex: 50,
+            // Safe area for home indicator on iPhone
+            paddingBottom: 'env(safe-area-inset-bottom,0px)',
+        }}>
+            {tabs.map(tab => (
+                <button key={tab.k} onClick={() => onPress(tab.k)}
+                    style={{
+                        flex: 1,
+                        paddingTop: 10,
+                        paddingBottom: 8,
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 2,
+                        minHeight: 54,
+                        // Prevent iOS tap highlight delay
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation',
+                    }}>
+                    <span style={{ fontSize: 22 }}>{tab.i}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: active === tab.k ? T.primary : '#94A3B8' }}>{tab.l}</span>
+                </button>
+            ))}
         </div>
     );
 }
@@ -1829,17 +1859,65 @@ function AppInner() {
     }
     function goBack() { if (stack.length > 1) setStack(p => p.slice(0, -1)); }
     return (
-        <div style={{ width: '100%', height: '100dvh', display: 'flex', flexDirection: 'column', fontFamily: "'Segoe UI',system-ui,sans-serif", maxWidth: 430, margin: '0 auto', background: T.bg, overflow: 'hidden', position: 'relative', paddingTop: 'env(safe-area-inset-top)' }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {cur === 'Dashboard' && <Dashboard trips={trips} expenses={expenses} navigate={nav} />}
-                {cur === 'Trips' && <Trips trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles} initialFilter={tripsFilter} />}
-                {cur === 'Vehicles' && <Vehicles vehicles={vehicles} setVehicles={setVehicles} />}
-                {cur === 'Reports' && <Reports trips={trips} expenses={expenses} />}
-                {cur === 'Settings' && <Settings vc={vc} setVc={setVc} />}
-                {cur === 'TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} pods={pods} setPods={setPods} goBack={goBack} />}
+        <>
+            {/* ── iOS PWA viewport fix ─────────────────────────────────────
+    position:fixed fills the exact visual viewport on iPhone.
+    This ensures touch coordinates match visual positions exactly,
+    fixing the "click lands lower than tap" issue in Safari PWA mode.
+    safe-area-inset-* handles notch + home indicator correctly.
+──────────────────────────────────────────────────────────────── */}
+            <style>{`
+  html,body{
+    margin:0;padding:0;
+    height:100%;
+    overflow:hidden;
+    /* Prevent iOS bounce scroll which shifts layout */
+    overscroll-behavior:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  #root{
+    position:fixed;
+    top:0;left:0;right:0;bottom:0;
+    /* Let JS handle safe areas — don't double-apply */
+    overflow:hidden;
+  }
+  /* Remove 300ms tap delay everywhere */
+  *{
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* Prevent text selection on buttons/tabs */
+  button{
+    -webkit-user-select:none;
+    user-select:none;
+  }
+`}</style>
+            <div style={{
+                // position:fixed so the container is pinned to the visual viewport
+                // This is the key fix — scrolling/bouncing can't shift our layout
+                position: 'fixed',
+                top: 0, left: 0, right: 0, bottom: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif",
+                maxWidth: 430,
+                margin: '0 auto',
+                background: T.bg,
+                overflow: 'hidden',
+                // Top safe area for iPhone notch/Dynamic Island
+                paddingTop: 'env(safe-area-inset-top,0px)',
+            }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+                    {cur === 'Dashboard' && <Dashboard trips={trips} expenses={expenses} navigate={nav} />}
+                    {cur === 'Trips' && <Trips trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles} initialFilter={tripsFilter} />}
+                    {cur === 'Vehicles' && <Vehicles vehicles={vehicles} setVehicles={setVehicles} />}
+                    {cur === 'Reports' && <Reports trips={trips} expenses={expenses} />}
+                    {cur === 'Settings' && <Settings vc={vc} setVc={setVc} />}
+                    {cur === 'TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} pods={pods} setPods={setPods} goBack={goBack} />}
+                </div>
+                {cur !== 'TripDetail' && <TabBar active={activeTab} onPress={nav} T={T} />}
             </div>
-            {cur !== 'TripDetail' && <TabBar active={activeTab} onPress={nav} T={T} />}
-        </div>
+        </>
     );
 }
 
