@@ -899,7 +899,72 @@ function Vehicles({ vehicles, setVehicles }) {
     );
 }
 
-// ═══════════════════════════ ADD TRIP MODAL ══════════════════════
+// ═══════════════════════════ BORDER CROSSINGS ════════════════════
+// All major USA-Canada border crossings with exact coordinates
+const BORDER_CROSSINGS = [
+    // ONTARIO ↔ MICHIGAN
+    { id: 'amb', name: 'Ambassador Bridge', ca: 'Windsor, ON', us: 'Detroit, MI', caLat: 42.3149, caLon: -83.0728, usLat: 42.3236, usLon: -83.0603, region: 'ON-MI' },
+    { id: 'det', name: 'Detroit-Windsor Tunnel', ca: 'Windsor, ON', us: 'Detroit, MI', caLat: 42.3201, caLon: -83.0431, usLat: 42.3270, usLon: -83.0402, region: 'ON-MI' },
+    { id: 'blue', name: 'Blue Water Bridge', ca: 'Sarnia, ON', us: 'Port Huron, MI', caLat: 42.9745, caLon: -82.4066, usLat: 43.0016, usLon: -82.4249, region: 'ON-MI' },
+    // ONTARIO ↔ NEW YORK
+    { id: 'peace', name: 'Peace Bridge', ca: 'Fort Erie, ON', us: 'Buffalo, NY', caLat: 42.9001, caLon: -79.0493, usLat: 42.8895, usLon: -78.8784, region: 'ON-NY' },
+    { id: 'rain', name: 'Rainbow Bridge', ca: 'Niagara Falls, ON', us: 'Niagara Falls, NY', caLat: 43.0895, caLon: -79.0695, usLat: 43.0879, usLon: -79.0621, region: 'ON-NY' },
+    { id: 'lewis', name: 'Lewiston-Queenston Bridge', ca: 'Queenston, ON', us: 'Lewiston, NY', caLat: 43.1662, caLon: -79.0494, usLat: 43.1726, usLon: -79.0437, region: 'ON-NY' },
+    { id: 'thou', name: 'Thousand Islands Bridge', ca: 'Lansdowne, ON', us: 'Alexandria Bay, NY', caLat: 44.3728, caLon: -75.9704, usLat: 44.3424, usLon: -75.9241, region: 'ON-NY' },
+    { id: 'corn', name: 'Cornwall-Massena Bridge', ca: 'Cornwall, ON', us: 'Massena, NY', caLat: 45.0275, caLon: -74.7267, usLat: 44.9278, usLon: -74.8918, region: 'ON-NY' },
+    { id: 'hills', name: 'Hill Island Bridge (Thousand Islands)', ca: 'Hill Island, ON', us: 'Collins Landing, NY', caLat: 44.3833, caLon: -76.0167, usLat: 44.3500, usLon: -76.0000, region: 'ON-NY' },
+    // ONTARIO ↔ MINNESOTA / NORTH DAKOTA
+    { id: 'int', name: 'International Falls Bridge', ca: 'Fort Frances, ON', us: 'International Falls, MN', caLat: 48.6084, caLon: -93.4001, usLat: 48.5946, usLon: -93.4099, region: 'ON-MN' },
+    // BRITISH COLUMBIA ↔ WASHINGTON / IDAHO
+    { id: 'pcb', name: 'Pacific Highway (BC-WA)', ca: 'Surrey, BC', us: 'Blaine, WA', caLat: 49.0021, caLon: -122.7518, usLat: 48.9940, usLon: -122.7526, region: 'BC-WA' },
+    { id: 'dpbc', name: 'Douglas/Peace Arch (BC-WA)', ca: 'Surrey, BC', us: 'Blaine, WA', caLat: 49.0022, caLon: -122.7566, usLat: 48.9988, usLon: -122.7570, region: 'BC-WA' },
+    { id: 'osoy', name: 'Osoyoos/Oroville (BC-WA)', ca: 'Osoyoos, BC', us: 'Oroville, WA', caLat: 49.0001, caLon: -119.4431, usLat: 48.9353, usLon: -119.4332, region: 'BC-WA' },
+    { id: 'kootn', name: 'Kingsgate/Eastport (BC-ID)', ca: 'Creston, BC', us: 'Eastport, ID', caLat: 49.0000, caLon: -116.1667, usLat: 48.9940, usLon: -116.1823, region: 'BC-ID' },
+    // ALBERTA ↔ MONTANA
+    { id: 'coots', name: 'Coutts/Sweetgrass (AB-MT)', ca: 'Coutts, AB', us: 'Sweetgrass, MT', caLat: 49.0000, caLon: -111.9667, usLat: 48.9972, usLon: -111.9659, region: 'AB-MT' },
+    { id: 'carw', name: 'Carway/Piegan (AB-MT)', ca: 'Carway, AB', us: 'Piegan, MT', caLat: 49.0000, caLon: -113.3667, usLat: 48.9972, usLon: -113.3640, region: 'AB-MT' },
+    // SASKATCHEWAN ↔ NORTH DAKOTA / MONTANA
+    { id: 'nport', name: 'North Portal/Portal (SK-ND)', ca: 'North Portal, SK', us: 'Portal, ND', caLat: 49.0000, caLon: -102.5500, usLat: 48.9972, usLon: -102.5524, region: 'SK-ND' },
+    { id: 'wgate', name: 'Willowcreek/Westgate (SK-MT)', ca: 'Val Marie, SK', us: 'Morgan, MT', caLat: 49.0000, caLon: -107.9667, usLat: 48.9972, usLon: -107.9627, region: 'SK-MT' },
+    // MANITOBA ↔ NORTH DAKOTA / MINNESOTA
+    { id: 'emers', name: 'Emerson/Pembina (MB-ND)', ca: 'Emerson, MB', us: 'Pembina, ND', caLat: 49.0000, caLon: -97.2167, usLat: 48.9659, usLon: -97.2413, region: 'MB-ND' },
+    { id: 'piney', name: 'Piney/Milltown (MB-MN)', ca: 'Piney, MB', us: 'Milltown, MN', caLat: 49.0000, caLon: -95.8500, usLat: 48.9972, usLon: -95.8482, region: 'MB-MN' },
+    // QUEBEC ↔ NEW YORK / VERMONT / NEW HAMPSHIRE
+    { id: 'champ', name: 'Champlain/Rouses Point (QC-NY)', ca: 'Lacolle, QC', us: 'Rouses Point, NY', caLat: 45.0833, caLon: -73.4333, usLat: 44.9956, usLon: -73.3641, region: 'QC-NY' },
+    { id: 'lacolle', name: 'Lacolle/Champlain (QC-NY)', ca: 'Lacolle, QC', us: 'Champlain, NY', caLat: 45.0883, caLon: -73.3750, usLat: 44.9883, usLon: -73.4390, region: 'QC-NY' },
+    { id: 'rock', name: 'Rockburn/Coventry (QC-NY)', ca: 'Rockburn, QC', us: 'Coventry, NY', caLat: 45.0500, caLon: -74.1000, usLat: 44.9800, usLon: -74.1500, region: 'QC-NY' },
+    { id: 'starm', name: 'St-Armand/Philipsburg (QC-VT)', ca: 'St-Armand, QC', us: 'Philipsburg, VT', caLat: 45.0167, caLon: -73.0667, usLat: 44.9800, usLon: -73.0700, region: 'QC-VT' },
+    { id: 'dtroit', name: 'Dundee/Derby Line (QC-VT)', ca: 'Dundee, QC', us: 'Derby Line, VT', caLat: 45.0028, caLon: -72.0972, usLat: 44.9972, usLon: -72.1000, region: 'QC-VT' },
+    // NEW BRUNSWICK ↔ MAINE
+    { id: 'woofl', name: 'Woodstock/Houlton (NB-ME)', ca: 'Woodstock, NB', us: 'Houlton, ME', caLat: 46.1500, caLon: -67.5600, usLat: 46.1303, usLon: -67.8436, region: 'NB-ME' },
+    { id: 'stst', name: 'St. Stephen/Calais (NB-ME)', ca: 'St. Stephen, NB', us: 'Calais, ME', caLat: 45.2000, caLon: -67.2833, usLat: 45.1856, usLon: -67.2794, region: 'NB-ME' },
+    { id: 'edmain', name: 'Edmundston/Madawaska (NB-ME)', ca: 'Edmundston, NB', us: 'Madawaska, ME', caLat: 47.3668, caLon: -68.3251, usLat: 47.3561, usLon: -68.3333, region: 'NB-ME' },
+    // NOVA SCOTIA (ferry — not a road crossing, skip)
+];
+
+// Detect if a trip crosses the USA-Canada border
+// Returns true if one city is in Canada and the other in USA
+const CA_PROV_SET = new Set(['ON', 'QC', 'BC', 'AB', 'MB', 'SK', 'NS', 'NB', 'NL', 'PE', 'NT', 'NU', 'YT']);
+const US_STATE_SET = new Set(['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC']);
+
+function detectCountry(label) {
+    if (!label) return null;
+    const parts = label.split(',');
+    const code = (parts[parts.length - 1] || '').trim().toUpperCase();
+    // Handle "City, Province, Canada" or "City, State, USA"
+    const code2 = (parts[parts.length - 2] || '').trim().toUpperCase();
+    if (CA_PROV_SET.has(code) || code === 'CANADA' || CA_PROV_SET.has(code2)) return 'CA';
+    if (US_STATE_SET.has(code) || code === 'USA' || US_STATE_SET.has(code2)) return 'US';
+    // Try to infer from province in second-to-last slot
+    return null;
+}
+
+function isCrossBorder(originLabel, destLabel) {
+    const oC = detectCountry(originLabel);
+    const dC = detectCountry(destLabel);
+    if (!oC || !dC) return false;
+    return oC !== dC;
+}
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
     const blank = { trip_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
@@ -910,16 +975,14 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
     const [distCalced, setDistCalced] = useState(false);
     const [distLoading, setDistLoading] = useState(false);
     const [dupWarning, setDupWarning] = useState(false);
+    const [selectedBorder, setSelectedBorder] = useState(null);
+    const [borderSearch, setBorderSearch] = useState('');
 
-    // Auto-generate next trip number — finds highest existing numeric suffix and increments
+    // Auto-generate next trip number
     function nextTripNumber(existingTrips) {
-        const nums = existingTrips.map(t => {
-            const m = (t.trip_number || '').match(/(\d+)$/);
-            return m ? parseInt(m[1], 10) : 0;
-        });
+        const nums = existingTrips.map(t => { const m = (t.trip_number || '').match(/(\d+)$/); return m ? parseInt(m[1], 10) : 0; });
         const max = nums.length ? Math.max(...nums) : 0;
-        const next = max + 1;
-        return `TRP-${String(next).padStart(3, '0')}`;
+        return `TRP-${String(max + 1).padStart(3, '0')}`;
     }
 
     useEffect(() => {
@@ -928,12 +991,11 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             setF({ trip_number: editTrip.trip_number || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '' });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
-            setDistCalced(false); setDupWarning(false);
+            setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         } else {
-            // Auto-fill next trip number for new trips
             const auto = nextTripNumber(trips || []);
             setF({ ...blank, trip_number: auto });
-            setOC(null); setDC(null); setDistCalced(false); setDupWarning(false);
+            setOC(null); setDC(null); setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         }
     }, [visible, editTrip]);
 
@@ -949,15 +1011,35 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         }
     };
 
-    function computeDriving(oCoord, dCoord) {
-        const result = calcDrivingDist(oCoord.lat, oCoord.lon, dCoord.lat, dCoord.lon);
-        s('distance', result.miles.toFixed(1));
-        setDistCalced({ miles: result.miles, km: result.km, source: 'estimate' });
+    function computeDriving(oCoord, dCoord, border) {
+        const brd = border || selectedBorder;
+        if (brd && oCoord && dCoord) {
+            // Determine which side of border to use based on origin country
+            const oCountry = detectCountry(f.origin) || 'CA';
+            const borderLat = oCountry === 'CA' ? brd.caLat : brd.usLat;
+            const borderLon = oCountry === 'CA' ? brd.caLon : brd.usLon;
+            const borderLat2 = oCountry === 'CA' ? brd.usLat : brd.caLat;
+            const borderLon2 = oCountry === 'CA' ? brd.usLon : brd.caLon;
+            const r1 = calcDrivingDist(oCoord.lat, oCoord.lon, borderLat, borderLon);
+            const r2 = calcDrivingDist(borderLat2, borderLon2, dCoord.lat, dCoord.lon);
+            const totalMiles = parseFloat((r1.miles + r2.miles).toFixed(1));
+            const totalKm = parseFloat((totalMiles * 1.60934).toFixed(1));
+            s('distance', String(totalMiles));
+            setDistCalced({
+                miles: totalMiles, km: totalKm, source: 'border',
+                seg1: `${r1.miles.toFixed(1)} mi origin→border`,
+                seg2: `${r2.miles.toFixed(1)} mi border→dest`
+            });
+        } else if (oCoord && dCoord) {
+            const result = calcDrivingDist(oCoord.lat, oCoord.lon, dCoord.lat, dCoord.lon);
+            s('distance', result.miles.toFixed(1));
+            setDistCalced({ miles: result.miles, km: result.km, source: 'estimate' });
+        }
         setDistLoading(false);
     }
 
-    const onOS = c => { setOC(c); if (dC) computeDriving(c, dC); };
-    const onDS = c => { setDC(c); if (oC) computeDriving(oC, c); };
+    const onOS = c => { setOC(c); if (dC) computeDriving(c, dC, selectedBorder); };
+    const onDS = c => { setDC(c); if (oC) computeDriving(oC, c, selectedBorder); };
 
     const distNum = parseFloat(f.distance) || 0;
     const rateNum = parseFloat(f.trip_rate) || 0;
@@ -971,8 +1053,8 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             setGps(false);
             const co = { lat: pos.coords.latitude, lon: pos.coords.longitude };
             const label = `${co.lat.toFixed(4)}, ${co.lon.toFixed(4)}`;
-            if (field === 'origin') { s('origin', label); setOC({ ...co, display: label }); if (dC) computeDriving({ ...co }, dC); }
-            else { s('destination', label); setDC({ ...co, display: label }); if (oC) computeDriving(oC, { ...co }); }
+            if (field === 'origin') { s('origin', label); setOC({ ...co, display: label }); if (dC) computeDriving({ ...co }, dC, selectedBorder); }
+            else { s('destination', label); setDC({ ...co, display: label }); if (oC) computeDriving(oC, { ...co }, selectedBorder); }
         }, () => setGps(false));
     }
 
@@ -983,8 +1065,8 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         if (!f.origin || !f.destination || !f.pickup_date) { alert('Please fill Origin, Destination, and Pickup Date.'); return; }
         const selectedVehicle = vehicles.find(v => String(v.id) === String(f.vehicle_id));
         onSave({
-            trip_number: f.trip_number.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date,// keep for backward compat with dashboard/reports
-            notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null
+            trip_number: f.trip_number.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
+            border_crossing: selectedBorder ? selectedBorder.name : null
         });
     }
 
@@ -1029,18 +1111,72 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             <PlacesAuto value={f.origin} onChange={v => { s('origin', v); if (!v) { setOC(null); setDistCalced(false); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onOS} />
             {gpsBtn('origin')}
             <Lbl c="Destination" T={T} />
-            <PlacesAuto value={f.destination} onChange={v => { s('destination', v); if (!v) { setDC(null); setDistCalced(false); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onDS} />
+            <PlacesAuto value={f.destination} onChange={v => { s('destination', v); if (!v) { setDC(null); setDistCalced(false); setSelectedBorder(null); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onDS} />
             {gpsBtn('destination')}
+
+            {/* ── Border Crossing — auto-shown when cross-border trip detected ── */}
+            {oC && dC && isCrossBorder(f.origin, f.destination) && (
+                <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: .5 }}>🛃 Border Crossing</div>
+                        {selectedBorder && <button onClick={() => { setSelectedBorder(null); if (oC && dC) computeDriving(oC, dC, null); }} style={{ fontSize: 11, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✕ Clear</button>}
+                    </div>
+                    {selectedBorder ? (
+                        <div style={{ background: '#F5F3FF', border: '2px solid #7C3AED', borderRadius: 10, padding: '10px 14px' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#5B21B6' }}>{selectedBorder.name}</div>
+                            <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 2 }}>{selectedBorder.ca} ↔ {selectedBorder.us}</div>
+                        </div>
+                    ) : (
+                        <div>
+                            <input
+                                value={borderSearch}
+                                onChange={e => setBorderSearch(e.target.value)}
+                                placeholder="Search border crossing…"
+                                style={{ ...iSt(T), marginBottom: 6 }} />
+                            <div style={{ maxHeight: 180, overflowY: 'auto', border: `1px solid ${T.border}`, borderRadius: 10, background: T.card }}>
+                                {BORDER_CROSSINGS.filter(b =>
+                                    !borderSearch ||
+                                    b.name.toLowerCase().includes(borderSearch.toLowerCase()) ||
+                                    b.ca.toLowerCase().includes(borderSearch.toLowerCase()) ||
+                                    b.us.toLowerCase().includes(borderSearch.toLowerCase()) ||
+                                    b.region.toLowerCase().includes(borderSearch.toLowerCase())
+                                ).map(b => (
+                                    <div key={b.id}
+                                        onClick={() => { setSelectedBorder(b); setBorderSearch(''); if (oC && dC) computeDriving(oC, dC, b); }}
+                                        style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2 }}
+                                        onTouchStart={e => e.currentTarget.style.background = T.bg}
+                                        onTouchEnd={e => { e.currentTarget.style.background = T.card; }}
+                                        onMouseEnter={e => e.currentTarget.style.background = T.bg}
+                                        onMouseLeave={e => e.currentTarget.style.background = T.card}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>🛃 {b.name}</div>
+                                        <div style={{ fontSize: 11, color: T.textSec }}>{b.ca} ↔ {b.us} · {b.region}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ fontSize: 10, color: T.textSec, marginTop: 4 }}>Cross-border trip detected · select your border crossing</div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <Lbl c="Distance" T={T} />
             {distCalced && f.distance ? (
-                <div style={{ background: '#ECFDF5', border: '1px solid #6EE7B7', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>🛣️</span>
-                    <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{parseFloat(f.distance).toFixed(1)} miles</span>
-                        <span style={{ fontSize: 12, color: '#555', marginLeft: 8 }}>({distCalced.km.toFixed(1)} km)</span>
-                        <div style={{ fontSize: 11, color: '#065F46', marginTop: 2 }}>📐 Estimated driving distance</div>
+                <div style={{ background: '#ECFDF5', border: '1px solid #6EE7B7', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: distCalced.source === 'border' ? 6 : 0 }}>
+                        <span style={{ fontSize: 16 }}>🛣️</span>
+                        <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{parseFloat(f.distance).toFixed(1)} miles</span>
+                            <span style={{ fontSize: 12, color: '#555', marginLeft: 8 }}>({distCalced.km.toFixed(1)} km)</span>
+                        </div>
+                        <button onClick={() => { setDistCalced(false); s('distance', ''); }} style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap' }}>Edit</button>
                     </div>
-                    <button onClick={() => { setDistCalced(false); s('distance', ''); }} style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', fontSize: 11, whiteSpace: 'nowrap' }}>Edit</button>
+                    {distCalced.source === 'border' && selectedBorder && (
+                        <div style={{ fontSize: 11, color: '#065F46', background: 'rgba(0,0,0,.04)', borderRadius: 6, padding: '6px 8px' }}>
+                            <div>📍 {distCalced.seg1} · via {selectedBorder.name}</div>
+                            <div style={{ marginTop: 2 }}>📍 {distCalced.seg2}</div>
+                        </div>
+                    )}
+                    {distCalced.source !== 'border' && <div style={{ fontSize: 11, color: '#065F46' }}>📐 Estimated driving distance</div>}
                 </div>
             ) : (
                 <input value={f.distance} onChange={e => { s('distance', e.target.value.replace(/[^0-9.]/g, '')); setDistCalced(false); }} placeholder="Auto-fills when both cities selected" style={iSt(T)} />
@@ -1401,7 +1537,8 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
                                             {trip.delivery_date && <span>🏁 {trip.delivery_date}</span>}
                                             <span>🛣️ {trip.distance || 0} miles</span>
                                         </div>
-                                        {trip.vehicle_label && <div style={{ fontSize: 12, color: T.accent, marginTop: 5, fontWeight: 600 }}>🚛 {trip.vehicle_label}</div>}
+                                        {trip.border_crossing && <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 4, fontWeight: 600 }}>🛃 {trip.border_crossing}</div>}
+                                        {trip.vehicle_label && <div style={{ fontSize: 12, color: T.accent, marginTop: 4, fontWeight: 600 }}>🚛 {trip.vehicle_label}</div>}
                                         {trip.notes ? <div style={{ fontSize: 12, color: T.textSec, marginTop: 4 }}>{trip.notes}</div> : null}
                                     </div>
                                 </div>
