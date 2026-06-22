@@ -721,7 +721,7 @@ const TRUCK_BRANDS = [
 ];
 
 const TRUCK_MODELS = {
-    'Freightliner': ['Cascadia', 'Classic XL', 'Columbia', 'Century Class', 'Coronado', 'Argosy', 'M2 106', 'M2 112', 'Business Class M2', 'Sprinter', '114SD', '108SD', '122SD'],
+    'Freightliner': ['Cascadia', 'Classic FLD', 'Classic XL', 'Columbia', 'Century Class', 'Coronado', 'Argosy', 'M2 106', 'M2 112', 'Business Class M2', 'Sprinter', '114SD', '108SD', '122SD'],
     'Peterbilt': ['389', '388', '379', '378', '367', '365', '362', '359', '357', '579', '567', '567 EPIQ', '587', '520', '520 EV', '220', '337', '348', '536'],
     'Kenworth': ['T680', 'T880', 'T660', 'T600', 'T800', 'W900', 'W990', 'C500', 'T170', 'T270', 'T370', 'T470', 'K270', 'K370', 'T680E', 'T680 FCEV'],
     'Volvo': ['VNL 760', 'VNL 780', 'VNL 740', 'VNL 860', 'VNL 400', 'VNL 300', 'VHD', 'VAH', 'VNR 300', 'VNR 400', 'VNX', 'FE', 'FM', 'FH'],
@@ -967,7 +967,7 @@ function isCrossBorder(originLabel, destLabel) {
 }
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
-    const blank = { trip_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
+    const blank = { trip_number: '', trailer_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
     const [f, setF] = useState(blank);
     const [oC, setOC] = useState(null);
     const [dC, setDC] = useState(null);
@@ -988,7 +988,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
     useEffect(() => {
         if (!visible) return;
         if (editTrip) {
-            setF({ trip_number: editTrip.trip_number || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '' });
+            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '' });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
             setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
@@ -1065,7 +1065,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         if (!f.origin || !f.destination || !f.pickup_date) { alert('Please fill Origin, Destination, and Pickup Date.'); return; }
         const selectedVehicle = vehicles.find(v => String(v.id) === String(f.vehicle_id));
         onSave({
-            trip_number: f.trip_number.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
+            trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
             border_crossing: selectedBorder ? selectedBorder.name : null
         });
     }
@@ -1098,9 +1098,19 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     {!f.vehicle_id && <div style={{ fontSize: 12, color: '#EF4444', marginTop: -4, marginBottom: 4 }}>⚠️ Vehicle selection is required</div>}
                 </div>
             )}
-            <Lbl c={<span>Trip Number <span style={{ color: '#EF4444' }}>*</span></span>} T={T} />
-            <input value={f.trip_number} onChange={e => s('trip_number', e.target.value)} placeholder="e.g. TRP-001, TRIP-2024-01, BOL#12345"
-                style={{ ...iSt(T), borderColor: dupWarning ? '#EF4444' : undefined, marginBottom: dupWarning ? 4 : 12 }} />
+            {/* ── Trip # and Trailer # side by side ── */}
+            <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1.4 }}>
+                    <Lbl c={<span>Trip # <span style={{ color: '#EF4444' }}>*</span></span>} T={T} />
+                    <input value={f.trip_number} onChange={e => s('trip_number', e.target.value)} placeholder="TRP-001"
+                        style={{ ...iSt(T), borderColor: dupWarning ? '#EF4444' : undefined, marginBottom: dupWarning ? 4 : 12 }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <Lbl c="Trailer #" T={T} />
+                    <input value={f.trailer_number} onChange={e => s('trailer_number', e.target.value)} placeholder="e.g. TRL-042"
+                        style={iSt(T)} />
+                </div>
+            </div>
             {dupWarning && (
                 <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#DC2626', fontWeight: 600 }}>⚠️ Trip #{f.trip_number} already exists</span>
@@ -1538,7 +1548,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
                                             <span>🛣️ {trip.distance || 0} miles</span>
                                         </div>
                                         {trip.border_crossing && <div style={{ fontSize: 11, color: '#7C3AED', marginTop: 4, fontWeight: 600 }}>🛃 {trip.border_crossing}</div>}
-                                        {trip.vehicle_label && <div style={{ fontSize: 12, color: T.accent, marginTop: 4, fontWeight: 600 }}>🚛 {trip.vehicle_label}</div>}
+                                        {trip.vehicle_label && <div style={{ fontSize: 12, color: T.accent, marginTop: 4, fontWeight: 600 }}>🚛 {trip.vehicle_label}{trip.trailer_number ? ` · 🚚 ${trip.trailer_number}` : ''}</div>}
                                         {trip.notes ? <div style={{ fontSize: 12, color: T.textSec, marginTop: 4 }}>{trip.notes}</div> : null}
                                     </div>
                                 </div>
