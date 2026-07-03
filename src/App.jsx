@@ -476,30 +476,30 @@ async function lookupPostalCode(code) {
     }
 
     if (isCA) {
-        // Canadian: format as "A1A 1A1" for Zippopotam
-        const formatted = clean.slice(0, 3) + ' ' + clean.slice(3);
+        // Canadian: try both "L5B 3J1" (with space) and "L5B3J1" (without space)
+        const withSpace = clean.slice(0, 3) + ' ' + clean.slice(3);
+        const noSpace = clean;
+        // Zippopotam uses lowercase 'ca' — DO NOT encodeURIComponent the space
+        let found = null;
         try {
-            // Zippopotam uses lowercase 'ca'
-            const res = await fetch('https://api.zippopotam.us/ca/' + encodeURIComponent(formatted), { headers: { 'Accept': 'application/json' } });
-            if (res.ok) {
-                const d = await res.json();
-                const p = d.places && d.places[0];
-                if (p) return { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
-            }
+            const res = await fetch('https://api.zippopotam.us/ca/' + withSpace, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) { const d = await res.json(); const p = d.places && d.places[0]; if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) }; }
         } catch (e) { }
+        if (!found) {
+            try {
+                const res = await fetch('https://api.zippopotam.us/ca/' + noSpace, { headers: { 'Accept': 'application/json' } });
+                if (res.ok) { const d = await res.json(); const p = d.places && d.places[0]; if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) }; }
+            } catch (e) { }
+        }
+        if (found) return found;
         // Fallback: nominatim
         try {
-            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + encodeURIComponent(formatted) + '&countrycodes=ca&format=json&limit=1', { headers: { 'Accept': 'application/json', 'User-Agent': 'HaulProFleetManager/1.0' } });
+            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + withSpace + '&countrycodes=ca&format=json&limit=1', { headers: { 'Accept': 'application/json' } });
             if (res.ok) {
                 const arr = await res.json();
                 if (arr && arr[0]) {
                     const parts = (arr[0].display_name || '').split(',');
-                    return {
-                        name: parts[0] ? parts[0].trim() : '',
-                        province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '',
-                        lat: parseFloat(arr[0].lat),
-                        lon: parseFloat(arr[0].lon),
-                    };
+                    return { name: parts[0] ? parts[0].trim() : '', province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '', lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
                 }
             }
         } catch (e) { }
@@ -1740,43 +1740,61 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter, onSaveTrip 
     const [show, setShow] = useState(false);
     const [edit, setEdit] = useState(null);
     const [confirmId, setConfirmId] = useState(null);
+    const [sortAsc, setSortAsc] = useState(false); // false = newest first (descending)
     const fColors = { All: T.primary, Scheduled: '#7C3AED', 'In Progress': '#F59E0B', Completed: '#2563EB', Cancelled: '#DC2626' };
     const STATUS_ORDER = { Scheduled: 0, 'In Progress': 1, 'Completed': 2, 'Cancelled': 3 };
+
     const filtered = useMemo(() => {
         const base = filter === 'All' ? trips : trips.filter(t => t.status === filter);
-        return [...base].sort((a, b) => { const sa = STATUS_ORDER[a.status] ?? 2; const sb = STATUS_ORDER[b.status] ?? 2; if (sa !== sb) return sa - sb; return (b.trip_date || '').localeCompare(a.trip_date || ''); });
-    }, [trips, filter]);
+        return [...base].sort((a, b) => {
+            // Primary: status order
+            const sa = STATUS_ORDER[a.status] ?? 2;
+            const sb = STATUS_ORDER[b.status] ?? 2;
+            if (sa !== sb) return sa - sb;
+            // Secondary: pickup_date (or trip_date fallback), asc or desc
+            const da = a.pickup_date || a.trip_date || '';
+            const db = b.pickup_date || b.trip_date || '';
+            if (da && db) {
+                return sortAsc ? da.localeCompare(db) : db.localeCompare(da);
+            }
+            // Tertiary: created_at timestamp
+            const ca = a.created_at || 0;
+            const cb = b.created_at || 0;
+            return sortAsc ? ca - cb : cb - ca;
+        });
+    }, [trips, filter, sortAsc]);
+
     function save(data) {
-        const ok = onSaveTrip ? onSaveTrip({ ...data, id: edit?.id }) : true;
+        const tripData = { ...data, created_at: edit?.created_at || Date.now() };
+        const ok = onSaveTrip ? onSaveTrip({ ...tripData, id: edit?.id }) : true;
         if (ok === false) return;
-        if (edit) setTrips(ts => ts.map(t => t.id === edit.id ? { ...t, ...data } : t));
-        else setTrips(ts => [{ ...data, id: Date.now() }, ...ts]);
+        if (edit) setTrips(ts => ts.map(t => t.id === edit.id ? { ...t, ...tripData } : t));
+        else setTrips(ts => [{ ...tripData, id: Date.now(), created_at: Date.now() }, ...ts]);
         setShow(false); setEdit(null);
     }
     function del(id) { setTrips(ts => ts.filter(t => t.id !== id)); setConfirmId(null); }
 
-    // Also validate inline status change on the card
     function changeStatus(tripId, newStatus) {
         if (newStatus === 'In Progress') {
             const trip = trips.find(t => t.id === tripId);
             if (trip) {
-                const conflict = trips.find(t =>
-                    String(t.vehicle_id) === String(trip.vehicle_id) &&
-                    t.status === 'In Progress' &&
-                    t.id !== tripId
-                );
-                if (conflict) {
-                    alert(`⚠️ This vehicle already has a trip In Progress:\n"${conflict.trip_number} — ${conflict.origin} → ${conflict.destination}"\n\nMark that trip Completed first.`);
-                    return;
-                }
+                const conflict = trips.find(t => String(t.vehicle_id) === String(trip.vehicle_id) && t.status === 'In Progress' && t.id !== tripId);
+                if (conflict) { alert(`⚠️ This vehicle already has a trip In Progress:\n"${conflict.trip_number} — ${conflict.origin} → ${conflict.destination}"\n\nMark that trip Completed first.`); return; }
             }
         }
         setTrips(ts => ts.map(t => t.id === tripId ? { ...t, status: newStatus } : t));
     }
+
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: T.bg, overflow: 'hidden' }}>
             <div style={{ background: T.primary, padding: '20px 20px 16px', flexShrink: 0 }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 14 }}>My Trips</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: '#fff' }}>My Trips</div>
+                    <button onClick={() => setSortAsc(p => !p)}
+                        style={{ background: 'rgba(255,255,255,.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {sortAsc ? '↑ Oldest' : '↓ Newest'}
+                    </button>
+                </div>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
                     {['All', 'Scheduled', 'In Progress', 'Completed', 'Cancelled'].map(f => { const a = filter === f; return <button key={f} onClick={() => setFilter(f)} style={{ padding: '7px 14px', borderRadius: 20, border: 'none', background: a ? '#fff' : 'rgba(255,255,255,.2)', color: a ? (fColors[f] || T.primary) : '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>{f}</button>; })}
                 </div>
