@@ -437,52 +437,206 @@ async function claudeFallbackSearch(q) {
     });
 }
 
+// ── Postal/ZIP lookup — tries multiple free APIs as fallback chain ──
+async function lookupPostalCode(code) {
+    const clean = code.trim().replace(/\s+/g, '').toUpperCase();
+    // Canadian postal code: A1A1A1 format
+    const isCA = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(clean);
+    // US ZIP: exactly 5 digits
+    const isUS = /^\d{5}$/.test(clean);
+    if (!isCA && !isUS) throw new Error('invalid');
+
+    if (isUS) {
+        // Try Zippopotam.us — country must be lowercase
+        try {
+            const res = await fetch('https://api.zippopotam.us/us/' + clean, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+                const d = await res.json();
+                const p = d.places && d.places[0];
+                if (p) return { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
+            }
+        } catch (e) { }
+        // Fallback: nominatim postal code search (sometimes works from browsers)
+        try {
+            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + clean + '&countrycodes=us&format=json&limit=1', { headers: { 'Accept': 'application/json', 'User-Agent': 'HaulProFleetManager/1.0' } });
+            if (res.ok) {
+                const arr = await res.json();
+                if (arr && arr[0]) {
+                    const parts = (arr[0].display_name || '').split(',');
+                    return {
+                        name: parts[0] ? parts[0].trim() : '',
+                        province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '',
+                        lat: parseFloat(arr[0].lat),
+                        lon: parseFloat(arr[0].lon),
+                    };
+                }
+            }
+        } catch (e) { }
+        throw new Error('notfound');
+    }
+
+    if (isCA) {
+        // Canadian: format as "A1A 1A1" for Zippopotam
+        const formatted = clean.slice(0, 3) + ' ' + clean.slice(3);
+        try {
+            // Zippopotam uses lowercase 'ca'
+            const res = await fetch('https://api.zippopotam.us/ca/' + encodeURIComponent(formatted), { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+                const d = await res.json();
+                const p = d.places && d.places[0];
+                if (p) return { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
+            }
+        } catch (e) { }
+        // Fallback: nominatim
+        try {
+            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + encodeURIComponent(formatted) + '&countrycodes=ca&format=json&limit=1', { headers: { 'Accept': 'application/json', 'User-Agent': 'HaulProFleetManager/1.0' } });
+            if (res.ok) {
+                const arr = await res.json();
+                if (arr && arr[0]) {
+                    const parts = (arr[0].display_name || '').split(',');
+                    return {
+                        name: parts[0] ? parts[0].trim() : '',
+                        province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '',
+                        lat: parseFloat(arr[0].lat),
+                        lon: parseFloat(arr[0].lon),
+                    };
+                }
+            }
+        } catch (e) { }
+        throw new Error('notfound');
+    }
+}
+
 // ── Manual save form — shown when city not found ──────────────────
 function ManualSaveForm({ value, T, onSave }) {
     const q = value.trim();
     const comma = q.lastIndexOf(',');
     const defaultName = comma > 0 ? q.slice(0, comma).trim() : q;
     const defaultProv = comma > 0 ? q.slice(comma + 1).trim().toUpperCase().slice(0, 2) : '';
+    const [tab, setTab] = useState('postal'); // 'postal' | 'manual'
+    const [postal, setPostal] = useState('');
+    const [postalLoading, setPostalLoading] = useState(false);
+    const [postalError, setPostalError] = useState('');
     const [name, setName] = useState(defaultName);
     const [prov, setProv] = useState(defaultProv);
     const [lat, setLat] = useState('');
     const [lon, setLon] = useState('');
-    const inpSt = { border: '1px solid ' + T.border, borderRadius: 7, padding: '7px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
-    function doSave(e) { e.preventDefault(); if (!name.trim()) return; onSave(name, prov, lat, lon); }
+    const inpSt = { border: '1px solid ' + T.border, borderRadius: 7, padding: '9px 10px', fontSize: 14, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box' };
+
+    async function doPostalLookup() {
+        const code = postal.trim();
+        if (!code) return;
+        // Quick client-side format validation before hitting API
+        const clean = code.replace(/\s+/g, '').toUpperCase();
+        const isCA = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(clean);
+        const isUS = /^\d{5}$/.test(clean);
+        if (!isCA && !isUS) {
+            setPostalError('Invalid format — use Canadian postal (L5B 3J1) or US ZIP (46750)');
+            return;
+        }
+        setPostalLoading(true); setPostalError('');
+        try {
+            const result = await lookupPostalCode(code);
+            if (!result.name || !result.lat || !result.lon) {
+                setPostalError('Could not get coordinates for this code — try Manual tab');
+                setPostalLoading(false); return;
+            }
+            // Save and select
+            onSave(result.name, result.province, String(result.lat), String(result.lon));
+        } catch (e) {
+            if (e.message === 'invalid') {
+                setPostalError('Invalid format — use Canadian postal (L5B 3J1) or US ZIP (46750)');
+            } else {
+                setPostalError('Code not found — double-check the ' + (/^\d/.test(clean) ? 'ZIP code' : 'postal code') + ' and try again, or use Manual tab');
+            }
+        }
+        setPostalLoading(false);
+    }
+
+    function doManualSave(e) {
+        e.preventDefault();
+        if (!name.trim()) return;
+        onSave(name, prov, lat, lon);
+    }
+
     return (
         <div style={{ padding: '12px 14px', borderBottom: '1px solid ' + T.border }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: T.textSec, marginBottom: 8, textTransform: 'uppercase', letterSpacing: .4 }}>
-                📍 Save to my cities
+                📍 City not found — add it
             </div>
-            {/* City name + Province */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <div style={{ flex: 2 }}>
-                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City Name</div>
-                    <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="e.g. Ingersoll" style={inpSt} />
-                </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Province/State</div>
-                    <input value={prov} onChange={function (e) { setProv(e.target.value.toUpperCase().slice(0, 2)); }} placeholder="ON" style={inpSt} maxLength={2} />
-                </div>
+
+            {/* Tab switcher */}
+            <div style={{ display: 'flex', background: T.bg, borderRadius: 8, padding: 3, gap: 3, marginBottom: 10 }}>
+                {[['postal', '📮 Postal / ZIP'], ['manual', '✏️ Manual']].map(([k, l]) => (
+                    <button key={k} onMouseDown={function (e) { e.preventDefault(); setTab(k); }} onTouchEnd={function (e) { e.preventDefault(); setTab(k); }}
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', background: tab === k ? T.card : T.bg, color: tab === k ? T.text : T.textSec, fontWeight: tab === k ? 700 : 400, fontSize: 12, cursor: 'pointer', boxShadow: tab === k ? '0 1px 3px rgba(0,0,0,.1)' : 'none', fontFamily: 'inherit' }}>
+                        {l}
+                    </button>
+                ))}
             </div>
-            {/* Optional lat / lon */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Latitude <span style={{ color: T.textSec, fontWeight: 400 }}>(optional)</span></div>
-                    <input value={lat} onChange={function (e) { setLat(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. 43.04" style={inpSt} inputMode="decimal" />
+
+            {/* Postal / ZIP tab */}
+            {tab === 'postal' && (
+                <div>
+                    <div style={{ fontSize: 11, color: T.textSec, marginBottom: 6, lineHeight: 1.5 }}>
+                        Enter the <b>postal code</b> (Canada) or <b>ZIP code</b> (USA) to auto-find coordinates:
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                        <input
+                            value={postal}
+                            onChange={function (e) { setPostal(e.target.value.toUpperCase()); setPostalError(''); }}
+                            placeholder="e.g. L5B 3J1 or 44101"
+                            style={{ ...inpSt, flex: 1, letterSpacing: 1 }}
+                            autoComplete="off"
+                            onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doPostalLookup(); } }}
+                        />
+                        <button
+                            onMouseDown={function (e) { e.preventDefault(); doPostalLookup(); }}
+                            onTouchEnd={function (e) { e.preventDefault(); doPostalLookup(); }}
+                            disabled={postalLoading}
+                            style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: postalLoading ? 0.7 : 1 }}>
+                            {postalLoading ? '…' : 'Look up'}
+                        </button>
+                    </div>
+                    {postalError && (
+                        <div style={{ fontSize: 11, color: '#DC2626', marginBottom: 6, lineHeight: 1.4 }}>{postalError}</div>
+                    )}
+                    <div style={{ fontSize: 10, color: T.textSec, lineHeight: 1.4 }}>
+                        🇨🇦 Canadian: <b>L5B 3J1</b>, <b>M1B 5K7</b>, <b>N2J 4G8</b><br />
+                        🇺🇸 American: <b>44101</b>, <b>48201</b>, <b>60601</b>
+                    </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Longitude <span style={{ color: T.textSec, fontWeight: 400 }}>(optional)</span></div>
-                    <input value={lon} onChange={function (e) { setLon(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. -80.88" style={inpSt} inputMode="decimal" />
+            )}
+
+            {/* Manual tab */}
+            {tab === 'manual' && (
+                <div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                        <div style={{ flex: 2 }}>
+                            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City Name</div>
+                            <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="e.g. Ingersoll" style={inpSt} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Province/State</div>
+                            <input value={prov} onChange={function (e) { setProv(e.target.value.toUpperCase().slice(0, 2)); }} placeholder="ON" style={inpSt} maxLength={2} />
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Latitude <span style={{ fontWeight: 400 }}>(optional)</span></div>
+                            <input value={lat} onChange={function (e) { setLat(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. 43.04" style={inpSt} inputMode="decimal" />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Longitude <span style={{ fontWeight: 400 }}>(optional)</span></div>
+                            <input value={lon} onChange={function (e) { setLon(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. -80.88" style={inpSt} inputMode="decimal" />
+                        </div>
+                    </div>
+                    <button onMouseDown={doManualSave} onTouchEnd={function (e) { e.preventDefault(); doManualSave(e); }}
+                        style={{ width: '100%', background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        💾 Save City
+                    </button>
                 </div>
-            </div>
-            <div style={{ fontSize: 10, color: T.textSec, marginBottom: 8, lineHeight: 1.4 }}>
-                💡 Lat/Lon is optional — find it on <b>Google Maps</b> by long-pressing your city. More accurate = better distance calculation.
-            </div>
-            <button onMouseDown={doSave} onTouchEnd={function (e) { e.preventDefault(); doSave(e); }}
-                style={{ width: '100%', background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                💾 Save City
-            </button>
+            )}
         </div>
     );
 }
@@ -721,7 +875,7 @@ const TRUCK_BRANDS = [
 ];
 
 const TRUCK_MODELS = {
-    'Freightliner': ['Cascadia', 'Classic FLD', 'Classic XL', 'Columbia', 'Century Class', 'Coronado', 'Argosy', 'M2 106', 'M2 112', 'Business Class M2', 'Sprinter', '114SD', '108SD', '122SD'],
+    'Freightliner': ['Cascadia', 'Classic XL', 'Columbia', 'Century Class', 'Coronado', 'Argosy', 'M2 106', 'M2 112', 'Business Class M2', 'Sprinter', '114SD', '108SD', '122SD'],
     'Peterbilt': ['389', '388', '379', '378', '367', '365', '362', '359', '357', '579', '567', '567 EPIQ', '587', '520', '520 EV', '220', '337', '348', '536'],
     'Kenworth': ['T680', 'T880', 'T660', 'T600', 'T800', 'W900', 'W990', 'C500', 'T170', 'T270', 'T370', 'T470', 'K270', 'K370', 'T680E', 'T680 FCEV'],
     'Volvo': ['VNL 760', 'VNL 780', 'VNL 740', 'VNL 860', 'VNL 400', 'VNL 300', 'VHD', 'VAH', 'VNR 300', 'VNR 400', 'VNX', 'FE', 'FM', 'FH'],
@@ -757,13 +911,18 @@ function SelField({ label, value, onChange, options, placeholder, T, required })
 // Year range 1990 → current year
 const YEAR_OPTIONS = (() => { const y = []; const cur = new Date().getFullYear(); for (let i = cur; i >= 1990; i--)y.push(String(i)); return y; })();
 
-function Vehicles({ vehicles, setVehicles }) {
+function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
     const { T } = useT();
+    const [activeTab, setActiveTab] = useState('trucks'); // 'trucks' | 'trailers'
     const blank = { id: null, unit_number: '', make: '', model: '', year: '', vehicle_type: 'Semi Truck', fuel_tank_capacity: '', license_plate: '', driver_name: '', notes: '' };
     const [form, setForm] = useState(blank);
     const [editing, setEditing] = useState(false);
     const [confirmDel, setConfirmDel] = useState(null);
     const [saved, setSaved] = useState(false);
+    // Trailer add state
+    const [newTrailer, setNewTrailer] = useState('');
+    const [trailerSaved, setTrailerSaved] = useState(false);
+    const [confirmDelTrailer, setConfirmDelTrailer] = useState(null);
     const sf = (k, v) => { setForm(p => ({ ...p, [k]: v })); setSaved(false); };
 
     // When make changes, reset model so stale model doesn't persist
@@ -843,60 +1002,138 @@ function Vehicles({ vehicles, setVehicles }) {
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: T.bg, overflow: 'hidden' }}>
             <div style={{ background: T.primary, padding: '20px 20px 16px', flexShrink: 0 }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 4 }}>🚛 Vehicles</div>
-                <div style={{ fontSize: 13, color: 'rgba(255,255,255,.8)' }}>Manage your truck fleet</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 12 }}>🚛 Fleet</div>
+                {/* Tab switcher */}
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,.15)', borderRadius: 10, padding: 3, gap: 3 }}>
+                    {[['trucks', '🚛 Trucks'], ['trailers', '🚚 Trailers']].map(([k, l]) => (
+                        <button key={k} onClick={() => setActiveTab(k)}
+                            style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: activeTab === k ? '#fff' : 'transparent', color: activeTab === k ? T.primary : 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                            {l}{k === 'trailers' && trailers.length > 0 ? ` (${trailers.length})` : ''}
+                        </button>
+                    ))}
+                </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px' }}>
-                {vehicles.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '60px 20px', color: T.textSec }}>
-                        <div style={{ fontSize: 64 }}>🚛</div>
-                        <div style={{ fontSize: 18, fontWeight: 700, marginTop: 16, color: T.text }}>No Vehicles Yet</div>
-                        <div style={{ fontSize: 14, marginTop: 8 }}>Add your first truck to get started</div>
-                        <button onClick={startNew} style={{ marginTop: 24, background: T.primary, color: '#fff', border: 'none', borderRadius: 12, padding: '12px 28px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>+ Add Vehicle</button>
-                    </div>
-                ) : vehicles.map(v => (
-                    <div key={v.id} style={{ background: T.card, borderRadius: 16, marginBottom: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.07)' }}>
-                        {confirmDel === v.id ? (
-                            <div style={{ background: '#FEF2F2', padding: '14px 16px' }}>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>🗑️ Delete {v.unit_number}?</div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={() => deleteVehicle(v.id)} style={{ flex: 1, background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Yes, Delete</button>
-                                    <button onClick={() => setConfirmDel(null)} style={{ flex: 1, background: T.border, color: T.text, border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                <div style={{ background: T.primary, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <div>
-                                        <div style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>Unit: {v.unit_number}</div>
-                                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.8)', marginTop: 2 }}>{v.vehicle_type}</div>
+
+            {/* ── TRUCKS TAB ── */}
+            {activeTab === 'trucks' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px', position: 'relative' }}>
+                    {vehicles.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '60px 20px', color: T.textSec }}>
+                            <div style={{ fontSize: 64 }}>🚛</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, marginTop: 16, color: T.text }}>No Vehicles Yet</div>
+                            <div style={{ fontSize: 14, marginTop: 8 }}>Add your first truck to get started</div>
+                            <button onClick={startNew} style={{ marginTop: 24, background: T.primary, color: '#fff', border: 'none', borderRadius: 12, padding: '12px 28px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>+ Add Vehicle</button>
+                        </div>
+                    ) : vehicles.map(v => (
+                        <div key={v.id} style={{ background: T.card, borderRadius: 16, marginBottom: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,.07)' }}>
+                            {confirmDel === v.id ? (
+                                <div style={{ background: '#FEF2F2', padding: '14px 16px' }}>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>🗑️ Delete {v.unit_number}?</div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button onClick={() => deleteVehicle(v.id)} style={{ flex: 1, background: '#DC2626', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Yes, Delete</button>
+                                        <button onClick={() => setConfirmDel(null)} style={{ flex: 1, background: T.border, color: T.text, border: 'none', borderRadius: 8, padding: '10px 0', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                                     </div>
-                                    <div style={{ background: 'rgba(255,255,255,.2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, color: '#fff', fontWeight: 600 }}>{v.year || '—'}</div>
                                 </div>
-                                <div style={{ padding: '12px 16px' }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
-                                        {v.make && <div><span style={{ color: T.textSec }}>Make: </span><span style={{ fontWeight: 600, color: T.text }}>{v.make}</span></div>}
-                                        {v.model && <div><span style={{ color: T.textSec }}>Model: </span><span style={{ fontWeight: 600, color: T.text }}>{v.model}</span></div>}
-                                        {v.license_plate && <div><span style={{ color: T.textSec }}>Plate: </span><span style={{ fontWeight: 600, color: T.text }}>{v.license_plate}</span></div>}
-                                        {v.fuel_tank_capacity && <div><span style={{ color: T.textSec }}>Tank: </span><span style={{ fontWeight: 600, color: T.text }}>{v.fuel_tank_capacity} gal</span></div>}
-                                        {v.driver_name && <div style={{ gridColumn: '1/-1' }}><span style={{ color: T.textSec }}>Driver: </span><span style={{ fontWeight: 600, color: T.text }}>{v.driver_name}</span></div>}
+                            ) : (
+                                <>
+                                    <div style={{ background: T.primary, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>Unit: {v.unit_number}</div>
+                                            <div style={{ fontSize: 12, color: 'rgba(255,255,255,.8)', marginTop: 2 }}>{v.vehicle_type}</div>
+                                        </div>
+                                        <div style={{ background: 'rgba(255,255,255,.2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, color: '#fff', fontWeight: 600 }}>{v.year || '—'}</div>
                                     </div>
-                                    {v.notes && <div style={{ fontSize: 12, color: T.textSec, marginTop: 8, fontStyle: 'italic' }}>{v.notes}</div>}
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, padding: '0 16px 12px', borderTop: `1px solid ${T.border}` }}>
-                                    <button onClick={() => startEdit(v)} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', paddingTop: 10 }}>✏️ Edit</button>
-                                    <button onClick={() => setConfirmDel(v.id)} style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', paddingTop: 10 }}>🗑️ Delete</button>
-                                </div>
-                            </>
+                                    <div style={{ padding: '12px 16px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+                                            {v.make && <div><span style={{ color: T.textSec }}>Make: </span><span style={{ fontWeight: 600, color: T.text }}>{v.make}</span></div>}
+                                            {v.model && <div><span style={{ color: T.textSec }}>Model: </span><span style={{ fontWeight: 600, color: T.text }}>{v.model}</span></div>}
+                                            {v.license_plate && <div><span style={{ color: T.textSec }}>Plate: </span><span style={{ fontWeight: 600, color: T.text }}>{v.license_plate}</span></div>}
+                                            {v.fuel_tank_capacity && <div><span style={{ color: T.textSec }}>Tank: </span><span style={{ fontWeight: 600, color: T.text }}>{v.fuel_tank_capacity} gal</span></div>}
+                                            {v.driver_name && <div style={{ gridColumn: '1/-1' }}><span style={{ color: T.textSec }}>Driver: </span><span style={{ fontWeight: 600, color: T.text }}>{v.driver_name}</span></div>}
+                                        </div>
+                                        {v.notes && <div style={{ fontSize: 12, color: T.textSec, marginTop: 8, fontStyle: 'italic' }}>{v.notes}</div>}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, padding: '0 16px 12px', borderTop: `1px solid ${T.border}` }}>
+                                        <button onClick={() => startEdit(v)} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', paddingTop: 10 }}>✏️ Edit</button>
+                                        <button onClick={() => setConfirmDel(v.id)} style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', paddingTop: 10 }}>🗑️ Delete</button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ))}
+                    {vehicles.length > 0 && (
+                        <button onClick={startNew} style={{ position: 'fixed', right: 20, bottom: 76, width: 56, height: 56, borderRadius: 28, background: T.primary, border: 'none', color: '#fff', fontSize: 28, cursor: 'pointer', boxShadow: `0 4px 16px ${T.primary}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>+</button>
+                    )}
+                </div>
+            )}
+
+            {/* ── TRAILERS TAB ── */}
+            {activeTab === 'trailers' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px' }}>
+                    {/* Add trailer input */}
+                    <div style={{ background: T.card, borderRadius: 16, padding: 16, marginBottom: 16, boxShadow: '0 2px 8px rgba(0,0,0,.06)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.textSec, marginBottom: 8, textTransform: 'uppercase', letterSpacing: .5 }}>Add Trailer Unit</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <input
+                                value={newTrailer}
+                                onChange={e => setNewTrailer(e.target.value.toUpperCase())}
+                                placeholder="e.g. TRL-042"
+                                style={{ flex: 1, border: `1px solid ${T.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 15, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit' }}
+                                onKeyDown={e => { if (e.key === 'Enter') addTrailer(); }}
+                            />
+                            <button onClick={addTrailer}
+                                style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                                + Add
+                            </button>
+                        </div>
+                        {trailerSaved && (
+                            <div style={{ marginTop: 8, fontSize: 12, color: '#059669', fontWeight: 600 }}>✅ Trailer saved!</div>
                         )}
                     </div>
-                ))}
-            </div>
-            {vehicles.length > 0 && (
-                <button onClick={startNew} style={{ position: 'absolute', right: 20, bottom: 76, width: 56, height: 56, borderRadius: 28, background: T.primary, border: 'none', color: '#fff', fontSize: 28, cursor: 'pointer', boxShadow: `0 4px 16px ${T.primary}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>+</button>
+
+                    {/* Trailer list */}
+                    {trailers.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '40px 20px', color: T.textSec }}>
+                            <div style={{ fontSize: 56 }}>🚚</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, marginTop: 12, color: T.text }}>No Trailers Yet</div>
+                            <div style={{ fontSize: 13, marginTop: 6 }}>Trailers are auto-saved when you create trips, or add them manually above.</div>
+                        </div>
+                    ) : [...trailers].sort((a, b) => a.unit_number.localeCompare(b.unit_number)).map(tr => (
+                        <div key={tr.id} style={{ background: T.card, borderRadius: 12, marginBottom: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+                            {confirmDelTrailer === tr.id ? (
+                                <div style={{ background: '#FEF2F2', padding: '12px 14px' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>🗑️ Delete {tr.unit_number}?</div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button onClick={() => { setTrailers(ts => ts.filter(t => t.id !== tr.id)); setConfirmDelTrailer(null); }} style={{ flex: 1, background: '#DC2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                                        <button onClick={() => setConfirmDelTrailer(null)} style={{ flex: 1, background: T.border, color: T.text, border: 'none', borderRadius: 7, padding: '8px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px' }}>
+                                    <span style={{ fontSize: 20, marginRight: 12 }}>🚚</span>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{tr.unit_number}</div>
+                                    </div>
+                                    <button onClick={() => setConfirmDelTrailer(tr.id)} style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🗑️</button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
             )}
         </div>
     );
+
+    function addTrailer() {
+        const num = newTrailer.trim().toUpperCase();
+        if (!num) return;
+        const exists = trailers.some(t => t.unit_number.toUpperCase() === num);
+        if (exists) { alert(`Trailer ${num} already exists.`); return; }
+        setTrailers(ts => [...ts, { id: Date.now(), unit_number: num }]);
+        setNewTrailer('');
+        setTrailerSaved(true);
+        setTimeout(() => setTrailerSaved(false), 2000);
+    }
 }
 
 // ═══════════════════════════ BORDER CROSSINGS ════════════════════
@@ -1496,10 +1733,9 @@ function Dashboard({ trips, expenses, navigate }) {
 }
 
 // ═══════════════════════════ TRIPS SCREEN ════════════════════════
-function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
+function Trips({ trips, setTrips, navigate, vehicles, initialFilter, onSaveTrip }) {
     const { T } = useT();
     const [filter, setFilter] = useState(initialFilter || 'All');
-    // Sync if parent changes initialFilter (e.g. navigating from dashboard banner)
     useEffect(() => { if (initialFilter) setFilter(initialFilter); }, [initialFilter]);
     const [show, setShow] = useState(false);
     const [edit, setEdit] = useState(null);
@@ -1510,8 +1746,33 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
         const base = filter === 'All' ? trips : trips.filter(t => t.status === filter);
         return [...base].sort((a, b) => { const sa = STATUS_ORDER[a.status] ?? 2; const sb = STATUS_ORDER[b.status] ?? 2; if (sa !== sb) return sa - sb; return (b.trip_date || '').localeCompare(a.trip_date || ''); });
     }, [trips, filter]);
-    function save(data) { if (edit) setTrips(ts => ts.map(t => t.id === edit.id ? { ...t, ...data } : t)); else setTrips(ts => [{ ...data, id: Date.now() }, ...ts]); setShow(false); setEdit(null); }
+    function save(data) {
+        const ok = onSaveTrip ? onSaveTrip({ ...data, id: edit?.id }) : true;
+        if (ok === false) return;
+        if (edit) setTrips(ts => ts.map(t => t.id === edit.id ? { ...t, ...data } : t));
+        else setTrips(ts => [{ ...data, id: Date.now() }, ...ts]);
+        setShow(false); setEdit(null);
+    }
     function del(id) { setTrips(ts => ts.filter(t => t.id !== id)); setConfirmId(null); }
+
+    // Also validate inline status change on the card
+    function changeStatus(tripId, newStatus) {
+        if (newStatus === 'In Progress') {
+            const trip = trips.find(t => t.id === tripId);
+            if (trip) {
+                const conflict = trips.find(t =>
+                    String(t.vehicle_id) === String(trip.vehicle_id) &&
+                    t.status === 'In Progress' &&
+                    t.id !== tripId
+                );
+                if (conflict) {
+                    alert(`⚠️ This vehicle already has a trip In Progress:\n"${conflict.trip_number} — ${conflict.origin} → ${conflict.destination}"\n\nMark that trip Completed first.`);
+                    return;
+                }
+            }
+        }
+        setTrips(ts => ts.map(t => t.id === tripId ? { ...t, status: newStatus } : t));
+    }
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: T.bg, overflow: 'hidden' }}>
             <div style={{ background: T.primary, padding: '20px 20px 16px', flexShrink: 0 }}>
@@ -1557,7 +1818,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter }) {
                                     <div style={{ position: 'relative' }}>
                                         <select
                                             value={trip.status || 'In Progress'}
-                                            onChange={e => { e.stopPropagation(); setTrips(ts => ts.map(t => t.id === trip.id ? { ...t, status: e.target.value } : t)); }}
+                                            onChange={e => { e.stopPropagation(); changeStatus(trip.id, e.target.value); }}
                                             onClick={e => e.stopPropagation()}
                                             style={{ border: `1px solid ${STATUS_COLORS[trip.status] || T.border}`, borderRadius: 7, padding: '5px 24px 5px 8px', fontSize: 12, fontWeight: 700, color: STATUS_COLORS[trip.status] || T.text, background: T.card, cursor: 'pointer', outline: 'none', appearance: 'none', WebkitAppearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%2364748B' d='M5 6L0 0h10z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 7px center', fontFamily: 'inherit' }}>
                                             {TRIP_STATUSES.map(st => <option key={st} value={st}>{st}</option>)}
@@ -1989,6 +2250,7 @@ function AppInner() {
     const [trips, setTrips] = useLocalStorage('tl_trips', INIT_TRIPS);
     const [expenses, setExpenses] = useLocalStorage('tl_expenses', INIT_EXPENSES);
     const [vehicles, setVehicles] = useLocalStorage('tl_vehicles', []);
+    const [trailers, setTrailers] = useLocalStorage('tl_trailers', []);
     const [pods, setPods] = useLocalStorage('tl_pods', []);
     const [vc, setVc] = useLocalStorage('tl_vc', { unit_number: '', vehicle_type: '', fuel_tank_capacity: '', driver_name: '' });
     const [stack, setStack] = useState(['Dashboard']);
@@ -2005,6 +2267,31 @@ function AppInner() {
         }
     }
     function goBack() { if (stack.length > 1) setStack(p => p.slice(0, -1)); }
+
+    // Auto-save new trailer numbers to the trailers database
+    function saveTrip(data) {
+        if (data.trailer_number && data.trailer_number.trim()) {
+            const num = data.trailer_number.trim().toUpperCase();
+            setTrailers(ts => {
+                const exists = ts.some(t => t.unit_number.toUpperCase() === num);
+                if (exists) return ts;
+                return [...ts, { id: Date.now(), unit_number: num }];
+            });
+        }
+        // Check vehicle conflict — can't have two In Progress trips for same truck
+        if (data.status === 'In Progress' && data.vehicle_id) {
+            const conflict = trips.find(t =>
+                String(t.vehicle_id) === String(data.vehicle_id) &&
+                t.status === 'In Progress' &&
+                (!data.id || t.id !== data.id)
+            );
+            if (conflict) {
+                alert(`⚠️ Vehicle already has a trip In Progress:\n"${conflict.trip_number} — ${conflict.origin} → ${conflict.destination}"\n\nMark that trip Completed before starting a new one.`);
+                return false;
+            }
+        }
+        return true;
+    }
     return (
         <>
             {/* ── iOS PWA viewport fix ─────────────────────────────────────
@@ -2056,8 +2343,8 @@ function AppInner() {
             }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                     {cur === 'Dashboard' && <Dashboard trips={trips} expenses={expenses} navigate={nav} />}
-                    {cur === 'Trips' && <Trips trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles} initialFilter={tripsFilter} />}
-                    {cur === 'Vehicles' && <Vehicles vehicles={vehicles} setVehicles={setVehicles} />}
+                    {cur === 'Trips' && <Trips trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles} initialFilter={tripsFilter} onSaveTrip={saveTrip} />}
+                    {cur === 'Vehicles' && <Vehicles vehicles={vehicles} setVehicles={setVehicles} trailers={trailers} setTrailers={setTrailers} />}
                     {cur === 'Reports' && <Reports trips={trips} expenses={expenses} />}
                     {cur === 'Settings' && <Settings vc={vc} setVc={setVc} />}
                     {cur === 'TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} pods={pods} setPods={setPods} goBack={goBack} />}
