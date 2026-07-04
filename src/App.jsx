@@ -437,17 +437,19 @@ async function claudeFallbackSearch(q) {
     });
 }
 
-// ── Postal/ZIP lookup — tries multiple free APIs as fallback chain ──
+// ── Postal/ZIP lookup ──────────────────────────────────────────────
+// Canada: Claude AI (exact city for full 6-char postal, handles rural areas)
+// USA: Zippopotam.us (free, CORS-friendly, accurate for US ZIPs)
 async function lookupPostalCode(code) {
     const clean = code.trim().replace(/\s+/g, '').toUpperCase();
-    // Canadian postal code: A1A1A1 format
-    const isCA = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(clean);
+    // Canadian postal: A1A1A1 or A1A (FSA only)
+    const isCA = /^[A-Z]\d[A-Z](\d[A-Z]\d)?$/.test(clean);
     // US ZIP: exactly 5 digits
     const isUS = /^\d{5}$/.test(clean);
     if (!isCA && !isUS) throw new Error('invalid');
 
     if (isUS) {
-        // Try Zippopotam.us — country must be lowercase
+        // Zippopotam works well for US ZIPs
         try {
             const res = await fetch('https://api.zippopotam.us/us/' + clean, { headers: { 'Accept': 'application/json' } });
             if (res.ok) {
@@ -456,47 +458,40 @@ async function lookupPostalCode(code) {
                 if (p) return { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
             }
         } catch (e) { }
-        // Fallback: nominatim postal code search (sometimes works from browsers)
-        try {
-            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + clean + '&countrycodes=us&format=json&limit=1', { headers: { 'Accept': 'application/json', 'User-Agent': 'HaulProFleetManager/1.0' } });
-            if (res.ok) {
-                const arr = await res.json();
-                if (arr && arr[0]) {
-                    const parts = (arr[0].display_name || '').split(',');
-                    return {
-                        name: parts[0] ? parts[0].trim() : '',
-                        province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '',
-                        lat: parseFloat(arr[0].lat),
-                        lon: parseFloat(arr[0].lon),
-                    };
-                }
-            }
-        } catch (e) { }
         throw new Error('notfound');
     }
 
     if (isCA) {
-        // Zippopotam Canada ONLY accepts FSA (first 3 characters): L5B not L5B3J1
-        const fsa = clean.slice(0, 3); // e.g. "L5B"
-        let found = null;
+        // Use Claude AI for Canadian postal codes — handles rural/exact cities correctly
+        const formatted = clean.length === 6 ? (clean.slice(0, 3) + ' ' + clean.slice(3)) : clean;
         try {
-            const res = await fetch('https://api.zippopotam.us/ca/' + fsa, { headers: { 'Accept': 'application/json' } });
+            const res = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-dangerous-direct-browser-access': 'true',
+                },
+                body: JSON.stringify({
+                    model: 'claude-haiku-4-5-20251001',
+                    max_tokens: 150,
+                    messages: [{
+                        role: 'user', content:
+                            'What city/town does Canadian postal code "' + formatted + '" belong to? ' +
+                            'Return ONLY a JSON object with these exact fields: ' +
+                            '{"name":"ExactCityName","province":"XX","lat":0.0,"lon":0.0} ' +
+                            'Use the specific city/town name, not a nearby landmark or mountain. ' +
+                            'Province must be 2-letter code (ON, MB, BC etc). No markdown, no explanation.'
+                    }]
+                })
+            });
             if (res.ok) {
                 const d = await res.json();
-                const p = d.places && d.places[0];
-                if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
-            }
-        } catch (e) { }
-        if (found) return found;
-        // Fallback: nominatim with full postal code
-        const withSpace = clean.slice(0, 3) + ' ' + clean.slice(3);
-        try {
-            const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + withSpace + '&countrycodes=ca&format=json&limit=1', { headers: { 'Accept': 'application/json' } });
-            if (res.ok) {
-                const arr = await res.json();
-                if (arr && arr[0]) {
-                    const parts = (arr[0].display_name || '').split(',');
-                    return { name: parts[0] ? parts[0].trim() : '', province: parts[2] ? parts[2].trim().slice(0, 2).toUpperCase() : '', lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
+                const txt = ((d.content || []).find(function (b) { return b.type === 'text'; }) || {}).text || '';
+                const clean2 = txt.replace(/```[a-z]*\n?/gi, '').trim();
+                const obj = JSON.parse(clean2);
+                if (obj.name && obj.province && obj.lat && obj.lon) {
+                    return { name: obj.name, province: obj.province, lat: parseFloat(obj.lat), lon: parseFloat(obj.lon) };
                 }
             }
         } catch (e) { }
@@ -524,12 +519,12 @@ function ManualSaveForm({ value, T, onSave }) {
         const code = postal.trim();
         if (!code) return;
         const clean = code.replace(/\s+/g, '').toUpperCase();
-        // Canadian FSA = 3 chars (A1A) OR full postal (A1A1A1)
+        // Canadian: 3-char FSA or full 6-char postal
         const isCA = /^[A-Z]\d[A-Z](\d[A-Z]\d)?$/.test(clean);
         // US ZIP: exactly 5 digits
         const isUS = /^\d{5}$/.test(clean);
         if (!isCA && !isUS) {
-            setPostalError('🇨🇦 Canada: enter first 3 chars (e.g. L5B) · 🇺🇸 USA: enter 5-digit ZIP (e.g. 46750)');
+            setPostalError('🇨🇦 Canada: enter full postal code (e.g. R0J1B0) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
             return;
         }
         setPostalLoading(true); setPostalError('');
@@ -542,7 +537,7 @@ function ManualSaveForm({ value, T, onSave }) {
             onSave(result.name, result.province, String(result.lat), String(result.lon));
         } catch (e) {
             if (e.message === 'invalid') {
-                setPostalError('🇨🇦 Canada: enter first 3 chars (e.g. L5B) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
+                setPostalError('🇨🇦 Canada: enter full postal code (e.g. R0J1B0) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
             } else {
                 setPostalError('Not found — check the code and try again, or use Manual tab');
             }
@@ -582,7 +577,7 @@ function ManualSaveForm({ value, T, onSave }) {
                         <input
                             value={postal}
                             onChange={function (e) { setPostal(e.target.value.toUpperCase()); setPostalError(''); }}
-                            placeholder="e.g. L5B or 46750"
+                            placeholder="e.g. R0J1B0 or 46750"
                             style={{ ...inpSt, flex: 1, letterSpacing: 1 }}
                             autoComplete="off"
                             onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doPostalLookup(); } }}
@@ -599,8 +594,8 @@ function ManualSaveForm({ value, T, onSave }) {
                         <div style={{ fontSize: 11, color: '#DC2626', marginBottom: 6, lineHeight: 1.4 }}>{postalError}</div>
                     )}
                     <div style={{ fontSize: 10, color: T.textSec, lineHeight: 1.6 }}>
-                        🇨🇦 Canada: first 3 chars only — <b>L5B</b>, <b>M1B</b>, <b>N2J</b>, <b>K1A</b><br />
-                        🇺🇸 USA: full 5-digit ZIP — <b>46750</b>, <b>48201</b>, <b>60601</b>
+                        🇨🇦 Canada: full postal code — <b>R0J1B0</b>, <b>L5B3J1</b>, <b>K1A0A9</b><br />
+                        🇺🇸 USA: 5-digit ZIP — <b>46750</b>, <b>48201</b>, <b>60601</b>
                     </div>
                 </div>
             )}
@@ -2372,5 +2367,4 @@ function AppInner() {
 
 export default function App() {
     return <ThemeProvider><AppInner /></ThemeProvider>;
-
 }
