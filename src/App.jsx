@@ -476,23 +476,20 @@ async function lookupPostalCode(code) {
     }
 
     if (isCA) {
-        // Canadian: try both "L5B 3J1" (with space) and "L5B3J1" (without space)
-        const withSpace = clean.slice(0, 3) + ' ' + clean.slice(3);
-        const noSpace = clean;
-        // Zippopotam uses lowercase 'ca' — DO NOT encodeURIComponent the space
+        // Zippopotam Canada ONLY accepts FSA (first 3 characters): L5B not L5B3J1
+        const fsa = clean.slice(0, 3); // e.g. "L5B"
         let found = null;
         try {
-            const res = await fetch('https://api.zippopotam.us/ca/' + withSpace, { headers: { 'Accept': 'application/json' } });
-            if (res.ok) { const d = await res.json(); const p = d.places && d.places[0]; if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) }; }
+            const res = await fetch('https://api.zippopotam.us/ca/' + fsa, { headers: { 'Accept': 'application/json' } });
+            if (res.ok) {
+                const d = await res.json();
+                const p = d.places && d.places[0];
+                if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) };
+            }
         } catch (e) { }
-        if (!found) {
-            try {
-                const res = await fetch('https://api.zippopotam.us/ca/' + noSpace, { headers: { 'Accept': 'application/json' } });
-                if (res.ok) { const d = await res.json(); const p = d.places && d.places[0]; if (p) found = { name: p['place name'], province: p['state abbreviation'], lat: parseFloat(p.latitude), lon: parseFloat(p.longitude) }; }
-            } catch (e) { }
-        }
         if (found) return found;
-        // Fallback: nominatim
+        // Fallback: nominatim with full postal code
+        const withSpace = clean.slice(0, 3) + ' ' + clean.slice(3);
         try {
             const res = await fetch('https://nominatim.openstreetmap.org/search?postalcode=' + withSpace + '&countrycodes=ca&format=json&limit=1', { headers: { 'Accept': 'application/json' } });
             if (res.ok) {
@@ -526,28 +523,28 @@ function ManualSaveForm({ value, T, onSave }) {
     async function doPostalLookup() {
         const code = postal.trim();
         if (!code) return;
-        // Quick client-side format validation before hitting API
         const clean = code.replace(/\s+/g, '').toUpperCase();
-        const isCA = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(clean);
+        // Canadian FSA = 3 chars (A1A) OR full postal (A1A1A1)
+        const isCA = /^[A-Z]\d[A-Z](\d[A-Z]\d)?$/.test(clean);
+        // US ZIP: exactly 5 digits
         const isUS = /^\d{5}$/.test(clean);
         if (!isCA && !isUS) {
-            setPostalError('Invalid format — use Canadian postal (L5B 3J1) or US ZIP (46750)');
+            setPostalError('🇨🇦 Canada: enter first 3 chars (e.g. L5B) · 🇺🇸 USA: enter 5-digit ZIP (e.g. 46750)');
             return;
         }
         setPostalLoading(true); setPostalError('');
         try {
             const result = await lookupPostalCode(code);
-            if (!result.name || !result.lat || !result.lon) {
-                setPostalError('Could not get coordinates for this code — try Manual tab');
+            if (!result || !result.name) {
+                setPostalError('Code not found — try another or use Manual tab');
                 setPostalLoading(false); return;
             }
-            // Save and select
             onSave(result.name, result.province, String(result.lat), String(result.lon));
         } catch (e) {
             if (e.message === 'invalid') {
-                setPostalError('Invalid format — use Canadian postal (L5B 3J1) or US ZIP (46750)');
+                setPostalError('🇨🇦 Canada: enter first 3 chars (e.g. L5B) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
             } else {
-                setPostalError('Code not found — double-check the ' + (/^\d/.test(clean) ? 'ZIP code' : 'postal code') + ' and try again, or use Manual tab');
+                setPostalError('Not found — check the code and try again, or use Manual tab');
             }
         }
         setPostalLoading(false);
@@ -579,13 +576,13 @@ function ManualSaveForm({ value, T, onSave }) {
             {tab === 'postal' && (
                 <div>
                     <div style={{ fontSize: 11, color: T.textSec, marginBottom: 6, lineHeight: 1.5 }}>
-                        Enter the <b>postal code</b> (Canada) or <b>ZIP code</b> (USA) to auto-find coordinates:
+                        Enter postal/ZIP code to auto-find city and coordinates:
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                         <input
                             value={postal}
                             onChange={function (e) { setPostal(e.target.value.toUpperCase()); setPostalError(''); }}
-                            placeholder="e.g. L5B 3J1 or 44101"
+                            placeholder="e.g. L5B or 46750"
                             style={{ ...inpSt, flex: 1, letterSpacing: 1 }}
                             autoComplete="off"
                             onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doPostalLookup(); } }}
@@ -601,9 +598,9 @@ function ManualSaveForm({ value, T, onSave }) {
                     {postalError && (
                         <div style={{ fontSize: 11, color: '#DC2626', marginBottom: 6, lineHeight: 1.4 }}>{postalError}</div>
                     )}
-                    <div style={{ fontSize: 10, color: T.textSec, lineHeight: 1.4 }}>
-                        🇨🇦 Canadian: <b>L5B 3J1</b>, <b>M1B 5K7</b>, <b>N2J 4G8</b><br />
-                        🇺🇸 American: <b>44101</b>, <b>48201</b>, <b>60601</b>
+                    <div style={{ fontSize: 10, color: T.textSec, lineHeight: 1.6 }}>
+                        🇨🇦 Canada: first 3 chars only — <b>L5B</b>, <b>M1B</b>, <b>N2J</b>, <b>K1A</b><br />
+                        🇺🇸 USA: full 5-digit ZIP — <b>46750</b>, <b>48201</b>, <b>60601</b>
                     </div>
                 </div>
             )}
