@@ -437,9 +437,547 @@ async function claudeFallbackSearch(q) {
     });
 }
 
+// ── Canadian FSA lookup table (first 3 chars of postal code) ──────
+// Built-in, no API needed, works offline from GitHub Pages
+const CA_FSA = {
+    // ON — GTA / Mississauga / Brampton / Hamilton / Niagara / London / Windsor / Ottawa / Kitchener
+    'M1B': ['Scarborough', 'ON', 43.8121, -79.2133], 'M1C': ['Scarborough', 'ON', 43.7841, -79.1617],
+    'M1E': ['Scarborough', 'ON', 43.7653, -79.1884], 'M1G': ['Scarborough', 'ON', 43.7704, -79.2170],
+    'M1H': ['Scarborough', 'ON', 43.7692, -79.2376], 'M1J': ['Scarborough', 'ON', 43.7434, -79.2291],
+    'M1K': ['Scarborough', 'ON', 43.7272, -79.2637], 'M1L': ['Scarborough', 'ON', 43.7465, -79.2943],
+    'M1M': ['Scarborough', 'ON', 43.7237, -79.2422], 'M1N': ['Scarborough', 'ON', 43.6951, -79.2591],
+    'M1P': ['Scarborough', 'ON', 43.7572, -79.2695], 'M1R': ['Scarborough', 'ON', 43.7506, -79.2987],
+    'M1S': ['Scarborough', 'ON', 43.7941, -79.2634], 'M1T': ['Scarborough', 'ON', 43.7835, -79.3004],
+    'M1V': ['Scarborough', 'ON', 43.8152, -79.2638], 'M1W': ['Scarborough', 'ON', 43.7994, -79.3139],
+    'M1X': ['Scarborough', 'ON', 43.8350, -79.2232],
+    'M2H': ['North York', 'ON', 43.8017, -79.3613], 'M2J': ['North York', 'ON', 43.7785, -79.3490],
+    'M2K': ['North York', 'ON', 43.7841, -79.3942], 'M2L': ['North York', 'ON', 43.7525, -79.3755],
+    'M2M': ['North York', 'ON', 43.7942, -79.4087], 'M2N': ['North York', 'ON', 43.7707, -79.4062],
+    'M2P': ['North York', 'ON', 43.7511, -79.4007], 'M2R': ['North York', 'ON', 43.8024, -79.4446],
+    'M3A': ['North York', 'ON', 43.7527, -79.3294], 'M3B': ['North York', 'ON', 43.7454, -79.3563],
+    'M3C': ['North York', 'ON', 43.7282, -79.3396], 'M3H': ['North York', 'ON', 43.7714, -79.4510],
+    'M3J': ['North York', 'ON', 43.7636, -79.4875], 'M3K': ['North York', 'ON', 43.7392, -79.4717],
+    'M3L': ['North York', 'ON', 43.7365, -79.5115], 'M3M': ['North York', 'ON', 43.7282, -79.5315],
+    'M3N': ['North York', 'ON', 43.7673, -79.5258],
+    'M4A': ['North York', 'ON', 43.7318, -79.3131], 'M4B': ['East York', 'ON', 43.7086, -79.3038],
+    'M4C': ['East York', 'ON', 43.6956, -79.3171], 'M4E': ['East Toronto', 'ON', 43.6792, -79.2955],
+    'M4G': ['Leaside', 'ON', 43.7103, -79.3633], 'M4H': ['East York', 'ON', 43.7057, -79.3474],
+    'M4J': ['East York', 'ON', 43.6862, -79.3368], 'M4K': ['East Toronto', 'ON', 43.6792, -79.3541],
+    'M4L': ['East Toronto', 'ON', 43.6656, -79.3288], 'M4M': ['East Toronto', 'ON', 43.6617, -79.3390],
+    'M4N': ['Lawrence Park', 'ON', 43.7246, -79.3905], 'M4P': ['Davisville', 'ON', 43.7122, -79.3939],
+    'M4R': ['North Toronto', 'ON', 43.7229, -79.4097], 'M4S': ['Davisville', 'ON', 43.7053, -79.3975],
+    'M4T': ['Midtown Toronto', 'ON', 43.6897, -79.3927], 'M4V': ['Deer Park', 'ON', 43.6864, -79.4015],
+    'M4W': ['Rosedale', 'ON', 43.6795, -79.3779], 'M4X': ['Cabbagetown', 'ON', 43.6652, -79.3685],
+    'M4Y': ['Church-Yonge Corridor', 'ON', 43.6660, -79.3833],
+    'M5A': ['Distillery District', 'ON', 43.6549, -79.3590], 'M5B': ['Garden District', 'ON', 43.6575, -79.3801],
+    'M5C': ['St James Town', 'ON', 43.6513, -79.3757], 'M5E': ['Berczy Park', 'ON', 43.6455, -79.3713],
+    'M5G': ['Discovery District', 'ON', 43.6578, -79.3876], 'M5H': ['Adelaide', 'ON', 43.6487, -79.3821],
+    'M5J': ['Harbourfront', 'ON', 43.6423, -79.3826], 'M5L': ['Commerce Court', 'ON', 43.6482, -79.3773],
+    'M5M': ['Bedford Park', 'ON', 43.7328, -79.4280], 'M5N': ['Roselawn', 'ON', 43.7174, -79.4208],
+    'M5P': ['Forest Hill', 'ON', 43.6980, -79.4202], 'M5R': ['Annex', 'ON', 43.6726, -79.4083],
+    'M5S': ['University', 'ON', 43.6647, -79.3972], 'M5T': ['Kensington Market', 'ON', 43.6540, -79.4010],
+    'M5V': ['Downtown Toronto', 'ON', 43.6449, -79.4031], 'M5X': ['First Canadian Place', 'ON', 43.6486, -79.3817],
+    'M6A': ['Lawrence Heights', 'ON', 43.7179, -79.4543], 'M6B': ['Glencairn', 'ON', 43.7047, -79.4549],
+    'M6C': ['Humewood-Cedarvale', 'ON', 43.6961, -79.4291], 'M6E': ['Caledonia-Fairbank', 'ON', 43.6888, -79.4512],
+    'M6G': ['Christie', 'ON', 43.6766, -79.4201], 'M6H': ['Dovercourt-Wallace', 'ON', 43.6589, -79.4345],
+    'M6J': ['Trinity-Bellwoods', 'ON', 43.6462, -79.4173], 'M6K': ['Brockton Village', 'ON', 43.6372, -79.4320],
+    'M6L': ['North Park', 'ON', 43.7145, -79.4830], 'M6M': ['Del Ray', 'ON', 43.6926, -79.4797],
+    'M6N': ['Runnymede', 'ON', 43.6654, -79.4812], 'M6P': ['High Park North', 'ON', 43.6600, -79.4618],
+    'M6R': ['Parkdale', 'ON', 43.6397, -79.4468], 'M6S': ['Roncesvalles', 'ON', 43.6498, -79.4617],
+    'M8V': ['Mimico', 'ON', 43.6048, -79.5058], 'M8W': ['Alderwood', 'ON', 43.6028, -79.5404],
+    'M8X': ['Kingsway South', 'ON', 43.6483, -79.5150], 'M8Y': ['Sunnylea', 'ON', 43.6345, -79.5031],
+    'M8Z': ['Mimico NW', 'ON', 43.6196, -79.5292], 'M9A': ['Islington', 'ON', 43.6605, -79.5333],
+    'M9B': ['Cloverdale', 'ON', 43.6477, -79.5596], 'M9C': ['Eringate', 'ON', 43.6453, -79.5731],
+    'M9L': ['Humber Summit', 'ON', 43.7568, -79.5939], 'M9M': ['Humberlea', 'ON', 43.7268, -79.5460],
+    'M9N': ['Weston', 'ON', 43.7074, -79.5193], 'M9P': ['Westmount', 'ON', 43.6936, -79.5274],
+    'M9R': ['Kingsview Village', 'ON', 43.6882, -79.5637], 'M9V': ['Thistletown', 'ON', 43.7407, -79.5941],
+    'M9W': ['Malton', 'ON', 43.7227, -79.6193],
+    // Mississauga
+    'L4T': ['Mississauga', 'ON', 43.7155, -79.6430], 'L4V': ['Mississauga', 'ON', 43.6975, -79.6327],
+    'L4W': ['Mississauga', 'ON', 43.6472, -79.6249], 'L4X': ['Mississauga', 'ON', 43.6366, -79.6031],
+    'L4Y': ['Mississauga', 'ON', 43.6139, -79.5990], 'L4Z': ['Mississauga', 'ON', 43.6002, -79.6469],
+    'L5A': ['Mississauga', 'ON', 43.5850, -79.6135], 'L5B': ['Mississauga', 'ON', 43.5930, -79.6383],
+    'L5C': ['Mississauga', 'ON', 43.5738, -79.6252], 'L5E': ['Mississauga', 'ON', 43.5573, -79.5640],
+    'L5G': ['Mississauga', 'ON', 43.5568, -79.5853], 'L5H': ['Mississauga', 'ON', 43.5419, -79.5904],
+    'L5J': ['Mississauga', 'ON', 43.5256, -79.6191], 'L5K': ['Mississauga', 'ON', 43.5376, -79.6425],
+    'L5L': ['Mississauga', 'ON', 43.5515, -79.6584], 'L5M': ['Mississauga', 'ON', 43.5648, -79.6773],
+    'L5N': ['Mississauga', 'ON', 43.5776, -79.7115], 'L5R': ['Mississauga', 'ON', 43.6119, -79.6685],
+    'L5S': ['Mississauga', 'ON', 43.6729, -79.6682], 'L5T': ['Mississauga', 'ON', 43.6603, -79.6590],
+    'L5V': ['Mississauga', 'ON', 43.6253, -79.7024], 'L5W': ['Mississauga', 'ON', 43.6442, -79.6875],
+    // Brampton
+    'L6P': ['Brampton', 'ON', 43.7681, -79.6941], 'L6R': ['Brampton', 'ON', 43.7572, -79.7254],
+    'L6S': ['Brampton', 'ON', 43.7348, -79.7192], 'L6T': ['Brampton', 'ON', 43.7165, -79.7354],
+    'L6V': ['Brampton', 'ON', 43.6935, -79.7654], 'L6W': ['Brampton', 'ON', 43.6766, -79.7566],
+    'L6X': ['Brampton', 'ON', 43.6905, -79.7913], 'L6Y': ['Brampton', 'ON', 43.6649, -79.7810],
+    'L6Z': ['Brampton', 'ON', 43.7327, -79.7937], 'L7A': ['Brampton', 'ON', 43.7495, -79.8228],
+    // Hamilton & Niagara
+    'L8E': ['Stoney Creek', 'ON', 43.2280, -79.7277], 'L8G': ['Stoney Creek', 'ON', 43.2107, -79.7569],
+    'L8H': ['Hamilton', 'ON', 43.2379, -79.8131], 'L8J': ['Hamilton', 'ON', 43.1977, -79.8053],
+    'L8K': ['Hamilton', 'ON', 43.2339, -79.8418], 'L8L': ['Hamilton', 'ON', 43.2569, -79.8533],
+    'L8M': ['Hamilton', 'ON', 43.2484, -79.8374], 'L8N': ['Hamilton', 'ON', 43.2444, -79.8557],
+    'L8P': ['Hamilton', 'ON', 43.2503, -79.8706], 'L8R': ['Hamilton', 'ON', 43.2607, -79.8648],
+    'L8S': ['Hamilton', 'ON', 43.2574, -79.8875], 'L8T': ['Hamilton', 'ON', 43.2270, -79.8638],
+    'L8V': ['Hamilton', 'ON', 43.2209, -79.8506], 'L8W': ['Hamilton', 'ON', 43.2025, -79.8629],
+    'L9A': ['Hamilton', 'ON', 43.2327, -79.9022], 'L9B': ['Hamilton', 'ON', 43.2017, -79.9118],
+    'L9C': ['Hamilton', 'ON', 43.2462, -79.9173], 'L9G': ['Ancaster', 'ON', 43.2138, -79.9752],
+    'L9H': ['Dundas', 'ON', 43.2658, -79.9565], 'L9K': ['Hamilton', 'ON', 43.2767, -79.9462],
+    'L2A': ['Fort Erie', 'ON', 42.9141, -79.0280], 'L2E': ['Niagara Falls', 'ON', 43.1018, -79.0707],
+    'L2G': ['Niagara Falls', 'ON', 43.0835, -79.0799], 'L2H': ['Niagara Falls', 'ON', 43.0730, -79.1205],
+    'L2J': ['Niagara Falls', 'ON', 43.1182, -79.0850], 'L2M': ['St Catharines', 'ON', 43.1802, -79.2143],
+    'L2N': ['St Catharines', 'ON', 43.1984, -79.2395], 'L2P': ['St Catharines', 'ON', 43.1598, -79.2313],
+    'L2R': ['St Catharines', 'ON', 43.1588, -79.2464], 'L2S': ['St Catharines', 'ON', 43.1487, -79.2717],
+    'L2T': ['St Catharines', 'ON', 43.1379, -79.2547], 'L2V': ['Welland', 'ON', 42.9918, -79.2399],
+    'L2W': ['Welland', 'ON', 42.9709, -79.2596], 'L3B': ['Welland', 'ON', 42.9816, -79.2382],
+    'L3C': ['Welland', 'ON', 42.9979, -79.2822],
+    // London / Windsor / Kitchener-Waterloo / Sarnia
+    'N2A': ['Kitchener', 'ON', 43.4543, -80.4422], 'N2B': ['Kitchener', 'ON', 43.4624, -80.4739],
+    'N2C': ['Kitchener', 'ON', 43.4267, -80.4432], 'N2E': ['Kitchener', 'ON', 43.4071, -80.4745],
+    'N2G': ['Kitchener', 'ON', 43.4462, -80.5107], 'N2H': ['Kitchener', 'ON', 43.4583, -80.5003],
+    'N2J': ['Waterloo', 'ON', 43.4820, -80.5340], 'N2K': ['Waterloo', 'ON', 43.4863, -80.5064],
+    'N2L': ['Waterloo', 'ON', 43.4739, -80.5523], 'N2M': ['Kitchener', 'ON', 43.4329, -80.5233],
+    'N2N': ['Kitchener', 'ON', 43.4224, -80.5466], 'N2P': ['Kitchener', 'ON', 43.3965, -80.4668],
+    'N2R': ['Kitchener', 'ON', 43.4002, -80.5194], 'N2T': ['Waterloo', 'ON', 43.4468, -80.5833],
+    'N2V': ['Waterloo', 'ON', 43.4648, -80.5855],
+    'N5V': ['London', 'ON', 43.0156, -81.1703], 'N5W': ['London', 'ON', 42.9941, -81.1857],
+    'N5X': ['London', 'ON', 43.0312, -81.2177], 'N5Y': ['London', 'ON', 43.0082, -81.2258],
+    'N5Z': ['London', 'ON', 42.9865, -81.2265], 'N6A': ['London', 'ON', 42.9973, -81.2472],
+    'N6B': ['London', 'ON', 42.9833, -81.2398], 'N6C': ['London', 'ON', 42.9670, -81.2433],
+    'N6E': ['London', 'ON', 42.9453, -81.2476], 'N6G': ['London', 'ON', 43.0148, -81.2879],
+    'N6H': ['London', 'ON', 42.9975, -81.2892], 'N6J': ['London', 'ON', 42.9676, -81.2771],
+    'N6K': ['London', 'ON', 42.9626, -81.3030], 'N6L': ['London', 'ON', 42.9413, -81.2875],
+    'N6M': ['London', 'ON', 42.9516, -81.2124], 'N6P': ['London', 'ON', 42.9300, -81.2666],
+    'N7A': ['Sarnia', 'ON', 42.9947, -82.4147], 'N7M': ['Sarnia', 'ON', 42.9680, -82.3887],
+    'N7S': ['Sarnia', 'ON', 42.9482, -82.3783], 'N7T': ['Sarnia', 'ON', 42.9760, -82.4289],
+    'N7V': ['Sarnia', 'ON', 43.0072, -82.4406], 'N7W': ['Sarnia', 'ON', 42.9590, -82.3573],
+    'N8A': ['Windsor', 'ON', 42.3159, -82.9765], 'N8H': ['Windsor', 'ON', 42.2868, -82.9449],
+    'N8N': ['Windsor', 'ON', 42.3034, -82.9342], 'N8P': ['Windsor', 'ON', 42.3366, -82.9568],
+    'N8R': ['Windsor', 'ON', 42.3104, -82.9985], 'N8S': ['Windsor', 'ON', 42.3330, -83.0090],
+    'N8T': ['Windsor', 'ON', 42.3002, -83.0211], 'N8V': ['Windsor', 'ON', 42.2902, -83.0295],
+    'N8W': ['Windsor', 'ON', 42.3177, -83.0488], 'N8X': ['Windsor', 'ON', 42.3031, -83.0432],
+    'N8Y': ['Windsor', 'ON', 42.3259, -83.0606], 'N9A': ['Windsor', 'ON', 42.3188, -83.0388],
+    'N9B': ['Windsor', 'ON', 42.3122, -83.0668], 'N9C': ['Windsor', 'ON', 42.3062, -83.0713],
+    'N9E': ['Windsor', 'ON', 42.2886, -83.0605], 'N9G': ['Windsor', 'ON', 42.2819, -83.0440],
+    'N9H': ['Windsor', 'ON', 42.2679, -83.0593], 'N9J': ['Windsor', 'ON', 42.2568, -83.0293],
+    'N9V': ['Windsor', 'ON', 42.3437, -83.0776], 'N9Y': ['Windsor', 'ON', 42.2910, -83.0167],
+    // Ottawa
+    'K1A': ['Ottawa', 'ON', 45.4215, -75.6972], 'K1B': ['Ottawa', 'ON', 45.4312, -75.6234],
+    'K1C': ['Ottawa', 'ON', 45.4498, -75.5841], 'K1E': ['Ottawa', 'ON', 45.4699, -75.5522],
+    'K1G': ['Ottawa', 'ON', 45.4082, -75.6505], 'K1H': ['Ottawa', 'ON', 45.3880, -75.6717],
+    'K1J': ['Ottawa', 'ON', 45.4492, -75.6301], 'K1K': ['Ottawa', 'ON', 45.4349, -75.6547],
+    'K1L': ['Ottawa', 'ON', 45.4313, -75.6684], 'K1M': ['Ottawa', 'ON', 45.4311, -75.6843],
+    'K1N': ['Ottawa', 'ON', 45.4267, -75.6936], 'K1P': ['Ottawa', 'ON', 45.4215, -75.6977],
+    'K1R': ['Ottawa', 'ON', 45.4166, -75.7087], 'K1S': ['Ottawa', 'ON', 45.4065, -75.6867],
+    'K1T': ['Ottawa', 'ON', 45.3712, -75.6565], 'K1V': ['Ottawa', 'ON', 45.3657, -75.6872],
+    'K1Y': ['Ottawa', 'ON', 45.4010, -75.7294], 'K1Z': ['Ottawa', 'ON', 45.4004, -75.7397],
+    'K2A': ['Ottawa', 'ON', 45.3946, -75.7614], 'K2B': ['Ottawa', 'ON', 45.3793, -75.7835],
+    'K2C': ['Ottawa', 'ON', 45.3665, -75.7575], 'K2E': ['Ottawa', 'ON', 45.3373, -75.7208],
+    'K2G': ['Ottawa', 'ON', 45.3451, -75.7584], 'K2H': ['Ottawa', 'ON', 45.3576, -75.7926],
+    'K2J': ['Ottawa', 'ON', 45.2988, -75.7408], 'K2K': ['Ottawa', 'ON', 45.3381, -75.8246],
+    'K2L': ['Ottawa', 'ON', 45.3214, -75.8344], 'K2M': ['Ottawa', 'ON', 45.3112, -75.8564],
+    'K2P': ['Ottawa', 'ON', 45.4107, -75.6945], 'K2R': ['Ottawa', 'ON', 45.3067, -75.9006],
+    'K2S': ['Ottawa', 'ON', 45.3017, -75.7934], 'K2T': ['Ottawa', 'ON', 45.3408, -75.9058],
+    'K0H': ['Kingston area', 'ON', 44.2312, -76.4860],
+    // Other ON rural FSAs
+    'K0A': ['Ottawa Valley', 'ON', 45.3000, -76.0000], 'K0B': ['Eastern ON', 'ON', 45.5000, -74.8000],
+    'K0C': ['Brockville area', 'ON', 44.5895, -75.6866], 'K0E': ['Kingston rural', 'ON', 44.3000, -76.2000],
+    'K0G': ['Perth area', 'ON', 44.9001, -76.2501], 'K0J': ['Renfrew area', 'ON', 45.4667, -76.6834],
+    'K0K': ['Trenton area', 'ON', 44.1001, -77.5834], 'K0L': ['Bancroft area', 'ON', 45.0559, -77.8525],
+    'K0M': ['Haliburton area', 'ON', 45.0500, -78.5000],
+    'L0A': ['Uxbridge area', 'ON', 44.1084, -79.1237], 'L0B': ['Newmarket rural', 'ON', 44.0501, -79.4667],
+    'L0C': ['Bradford area', 'ON', 44.1167, -79.5667], 'L0E': ['Barrie area S', 'ON', 44.3894, -79.6903],
+    'L0G': ['Peel rural', 'ON', 43.9000, -79.8000], 'L0H': ['Caledon area', 'ON', 43.9000, -79.9000],
+    'L0J': ['Georgetown area', 'ON', 43.6501, -79.9167], 'L0K': ['Midland area', 'ON', 44.7501, -79.8834],
+    'L0L': ['Barrie rural', 'ON', 44.5001, -80.2167], 'L0M': ['Collingwood area', 'ON', 44.5001, -80.2167],
+    'L0N': ['Guelph rural', 'ON', 43.5448, -80.2482], 'L0P': ['Cambridge area', 'ON', 43.3616, -80.3144],
+    'L0R': ['Hamilton rural', 'ON', 43.2557, -79.8711], 'L0S': ['Niagara rural', 'ON', 43.0962, -79.0377],
+    'L3P': ['Markham', 'ON', 43.8561, -79.3370], 'L3R': ['Markham', 'ON', 43.8561, -79.3370],
+    'L3S': ['Markham', 'ON', 43.8561, -79.3370], 'L3T': ['Thornhill', 'ON', 43.8200, -79.4100],
+    'L4B': ['Richmond Hill', 'ON', 43.8828, -79.4403], 'L4C': ['Richmond Hill', 'ON', 43.8828, -79.4403],
+    'L4E': ['Richmond Hill', 'ON', 43.9300, -79.4500], 'L4G': ['Aurora', 'ON', 43.9985, -79.4676],
+    'L4H': ['Vaughan', 'ON', 43.8361, -79.4983], 'L4J': ['Thornhill', 'ON', 43.8090, -79.4337],
+    'L4K': ['Vaughan', 'ON', 43.8079, -79.5200], 'L4L': ['Vaughan', 'ON', 43.7891, -79.5501],
+    'L6A': ['Maple', 'ON', 43.8556, -79.5258], 'L6B': ['Markham', 'ON', 43.8561, -79.2638],
+    'L6C': ['Markham', 'ON', 43.9000, -79.3500], 'L6E': ['Markham', 'ON', 43.8845, -79.2774],
+    // QUEBEC
+    'H1A': ['Montreal', 'QC', 45.5893, -73.5360], 'H1B': ['Montreal', 'QC', 45.5850, -73.5104],
+    'H1G': ['Montreal', 'QC', 45.5831, -73.5596], 'H1H': ['Montreal', 'QC', 45.5708, -73.5719],
+    'H1J': ['Montreal', 'QC', 45.5622, -73.5388], 'H1N': ['Montreal', 'QC', 45.5406, -73.5642],
+    'H1R': ['Montreal', 'QC', 45.5573, -73.6200], 'H1S': ['Montreal', 'QC', 45.5423, -73.5895],
+    'H1T': ['Montreal', 'QC', 45.5512, -73.5714], 'H1V': ['Montreal', 'QC', 45.5461, -73.5751],
+    'H1W': ['Montreal', 'QC', 45.5374, -73.5488], 'H1Y': ['Montreal', 'QC', 45.5476, -73.6002],
+    'H1Z': ['Montreal', 'QC', 45.5518, -73.6305], 'H2A': ['Montreal', 'QC', 45.5590, -73.6389],
+    'H2B': ['Montreal', 'QC', 45.5700, -73.6578], 'H2E': ['Montreal', 'QC', 45.5497, -73.6461],
+    'H2G': ['Montreal', 'QC', 45.5382, -73.6233], 'H2H': ['Montreal', 'QC', 45.5316, -73.6009],
+    'H2J': ['Montreal', 'QC', 45.5247, -73.5853], 'H2K': ['Montreal', 'QC', 45.5313, -73.5544],
+    'H2L': ['Montreal', 'QC', 45.5221, -73.5607], 'H2M': ['Montreal', 'QC', 45.5592, -73.6627],
+    'H2N': ['Montreal', 'QC', 45.5588, -73.6832], 'H2P': ['Montreal', 'QC', 45.5538, -73.6557],
+    'H2R': ['Montreal', 'QC', 45.5445, -73.6708], 'H2S': ['Montreal', 'QC', 45.5349, -73.6484],
+    'H2T': ['Montreal', 'QC', 45.5254, -73.6195], 'H2V': ['Montreal', 'QC', 45.5100, -73.6130],
+    'H2W': ['Montreal', 'QC', 45.5136, -73.5717], 'H2X': ['Montreal', 'QC', 45.5107, -73.5703],
+    'H2Y': ['Montreal', 'QC', 45.5048, -73.5583], 'H2Z': ['Montreal', 'QC', 45.4980, -73.5628],
+    'H3A': ['Montreal', 'QC', 45.5040, -73.5775], 'H3B': ['Montreal', 'QC', 45.4997, -73.5662],
+    'H3C': ['Montreal', 'QC', 45.4920, -73.5617], 'H3G': ['Montreal', 'QC', 45.4923, -73.5789],
+    'H3H': ['Montreal', 'QC', 45.4875, -73.5853], 'H3J': ['Montreal', 'QC', 45.4812, -73.5862],
+    'H3K': ['Montreal', 'QC', 45.4728, -73.5835], 'H3L': ['Montreal', 'QC', 45.5436, -73.6963],
+    'H3M': ['Montreal', 'QC', 45.5336, -73.7110], 'H3N': ['Montreal', 'QC', 45.5270, -73.6831],
+    'H3P': ['Montreal', 'QC', 45.4995, -73.6434], 'H3R': ['Montreal', 'QC', 45.4936, -73.6523],
+    'H3S': ['Montreal', 'QC', 45.4900, -73.6278], 'H3T': ['Montreal', 'QC', 45.4810, -73.6285],
+    'H3V': ['Montreal', 'QC', 45.4735, -73.6308], 'H3W': ['Montreal', 'QC', 45.4665, -73.6255],
+    'H3X': ['Montreal', 'QC', 45.4546, -73.6470], 'H3Y': ['Westmount', 'QC', 45.4847, -73.5997],
+    'H3Z': ['Westmount', 'QC', 45.4781, -73.6055], 'H4A': ['Montreal', 'QC', 45.4668, -73.6095],
+    'H4B': ['Montreal', 'QC', 45.4612, -73.6207], 'H4C': ['Montreal', 'QC', 45.4720, -73.5745],
+    'H4E': ['Montreal', 'QC', 45.4575, -73.5836], 'H4G': ['Montreal', 'QC', 45.4522, -73.5950],
+    'H4H': ['Montreal', 'QC', 45.4461, -73.5738], 'H4J': ['Montreal', 'QC', 45.5204, -73.7019],
+    'H4K': ['Montreal', 'QC', 45.5069, -73.7207], 'H4L': ['Montreal', 'QC', 45.4951, -73.7143],
+    'H4M': ['Montreal', 'QC', 45.5012, -73.6843], 'H4N': ['Montreal', 'QC', 45.5094, -73.6603],
+    'H4P': ['Montreal', 'QC', 45.4986, -73.6601], 'H4R': ['Montreal', 'QC', 45.5162, -73.7395],
+    'H4S': ['Montreal', 'QC', 45.5121, -73.7658], 'H4T': ['Montreal', 'QC', 45.4848, -73.6784],
+    'H4V': ['Montreal', 'QC', 45.4592, -73.6062], 'H4W': ['Montreal', 'QC', 45.4496, -73.6164],
+    'H4X': ['Montreal', 'QC', 45.4440, -73.6354], 'H4Y': ['Dorval', 'QC', 45.4496, -73.7413],
+    'H7A': ['Laval', 'QC', 45.6547, -73.7359], 'H7B': ['Laval', 'QC', 45.6673, -73.7175],
+    'H7C': ['Laval', 'QC', 45.6436, -73.6957], 'H7E': ['Laval', 'QC', 45.6392, -73.6706],
+    'H7G': ['Laval', 'QC', 45.6127, -73.7202], 'H7H': ['Laval', 'QC', 45.6098, -73.7497],
+    'H7J': ['Laval', 'QC', 45.6008, -73.7670], 'H7K': ['Laval', 'QC', 45.6149, -73.7779],
+    'H7L': ['Laval', 'QC', 45.6259, -73.7920], 'H7M': ['Laval', 'QC', 45.5954, -73.6917],
+    'H7N': ['Laval', 'QC', 45.5878, -73.6728], 'H7P': ['Laval', 'QC', 45.5891, -73.7372],
+    'H7R': ['Laval', 'QC', 45.5809, -73.7670], 'H7S': ['Laval', 'QC', 45.6376, -73.7657],
+    'H7T': ['Laval', 'QC', 45.6504, -73.7626], 'H7V': ['Laval', 'QC', 45.6684, -73.7577],
+    'H7W': ['Laval', 'QC', 45.6799, -73.7395], 'H7X': ['Laval', 'QC', 45.6820, -73.7164],
+    'H7Y': ['Laval', 'QC', 45.6894, -73.7023],
+    'H8P': ['LaSalle', 'QC', 45.4285, -73.6406], 'H8R': ['LaSalle', 'QC', 45.4285, -73.6406],
+    'H8S': ['LaSalle', 'QC', 45.4285, -73.6406], 'H8T': ['LaSalle', 'QC', 45.4285, -73.6406],
+    'H8Y': ['Pointe-Claire', 'QC', 45.4696, -73.8195], 'H8Z': ['Dollard-des-Ormeaux', 'QC', 45.4927, -73.8200],
+    'H9A': ['Dollard-des-Ormeaux', 'QC', 45.4927, -73.8200], 'H9B': ['Dollard-des-Ormeaux', 'QC', 45.4927, -73.8200],
+    'H9C': ['Dollard-des-Ormeaux', 'QC', 45.4927, -73.8200], 'H9E': ['Kirkland', 'QC', 45.4557, -73.8756],
+    'H9G': ['Pierrefonds', 'QC', 45.4930, -73.8640], 'H9H': ['Pierrefonds', 'QC', 45.4930, -73.8640],
+    'H9J': ['Pierrefonds', 'QC', 45.4930, -73.8640], 'H9K': ['Pierrefonds', 'QC', 45.4930, -73.8640],
+    'H9P': ['Vaudreuil', 'QC', 45.4012, -74.0284], 'H9R': ['Pointe-Claire', 'QC', 45.4696, -73.8195],
+    'H9S': ['Pointe-Claire', 'QC', 45.4696, -73.8195], 'H9W': ['Beaconsfield', 'QC', 45.4383, -73.8637],
+    'H9X': ['Ste-Anne-de-Bellevue', 'QC', 45.4066, -73.9572],
+    'G1A': ['Quebec City', 'QC', 46.8139, -71.2082], 'G1B': ['Quebec City', 'QC', 46.8468, -71.1505],
+    'G1C': ['Quebec City', 'QC', 46.8403, -71.1911], 'G1E': ['Quebec City', 'QC', 46.8713, -71.1476],
+    'G1G': ['Quebec City', 'QC', 46.8556, -71.2514], 'G1H': ['Quebec City', 'QC', 46.8489, -71.2900],
+    'G1J': ['Quebec City', 'QC', 46.8372, -71.2600], 'G1K': ['Quebec City', 'QC', 46.8172, -71.2214],
+    'G1L': ['Quebec City', 'QC', 46.8256, -71.2349], 'G1M': ['Quebec City', 'QC', 46.8107, -71.2597],
+    'G1N': ['Quebec City', 'QC', 46.7966, -71.2640], 'G1P': ['Quebec City', 'QC', 46.7891, -71.3175],
+    'G1R': ['Quebec City', 'QC', 46.8085, -71.2142], 'G1S': ['Quebec City', 'QC', 46.8013, -71.2432],
+    'G1T': ['Quebec City', 'QC', 46.8066, -71.2759], 'G1V': ['Quebec City', 'QC', 46.7852, -71.2863],
+    'G1W': ['Quebec City', 'QC', 46.7755, -71.3108], 'G1X': ['Quebec City', 'QC', 46.7780, -71.3483],
+    'G2A': ['Quebec City', 'QC', 46.8579, -71.3219], 'G2B': ['Quebec City', 'QC', 46.8783, -71.3353],
+    'G2C': ['Quebec City', 'QC', 46.9007, -71.3210], 'G2E': ['Quebec City', 'QC', 46.8303, -71.3550],
+    'G2G': ['Quebec City', 'QC', 46.8432, -71.3778], 'G2J': ['Quebec City', 'QC', 46.8639, -71.3576],
+    'G2K': ['Quebec City', 'QC', 46.8756, -71.3649], 'G2L': ['Quebec City', 'QC', 46.8870, -71.3508],
+    'G2M': ['Quebec City', 'QC', 46.8939, -71.3356], 'G2N': ['Quebec City', 'QC', 46.9110, -71.3110],
+    'G3A': ['Quebec City', 'QC', 46.9200, -71.2840], 'G3B': ['Quebec City', 'QC', 46.9378, -71.2589],
+    'G3E': ['Lac-Saint-Charles', 'QC', 46.9500, -71.3800], 'G3G': ['Stoneham', 'QC', 47.0339, -71.3769],
+    'G3H': ['Shannon', 'QC', 46.8833, -71.5167], 'G3J': ['Quebec City', 'QC', 46.9000, -71.3200],
+    'G3K': ['Quebec City', 'QC', 46.9200, -71.3400], 'G3L': ['Pont-Rouge', 'QC', 46.7545, -71.6989],
+    'G3M': ['Quebec City area', 'QC', 46.8500, -71.5000], 'G3N': ['Quebec City area', 'QC', 46.7500, -71.4000],
+    'G3Z': ['Quebec City area', 'QC', 46.8000, -71.4000],
+    'G4A': ['Riviere-du-Loup', 'QC', 47.8333, -69.5333], 'G4R': ['Sept-Iles', 'QC', 50.2167, -66.3834],
+    'G4S': ['Sept-Iles', 'QC', 50.2167, -66.3834], 'G4T': ['Baie-Comeau', 'QC', 49.2167, -68.1500],
+    'G4V': ['Riviere-du-Loup', 'QC', 47.8333, -69.5333], 'G4W': ['Riviere-du-Loup', 'QC', 47.8333, -69.5333],
+    'G4X': ['Gaspe', 'QC', 48.8333, -64.4833], 'G4Z': ['Matane', 'QC', 48.8500, -67.5333],
+    'G5A': ['La Malbaie', 'QC', 47.6500, -70.1500], 'G5B': ['Jonquiere', 'QC', 48.4168, -71.2351],
+    'G5C': ['Jonquiere', 'QC', 48.4168, -71.2351], 'G5H': ['Saguenay', 'QC', 48.4285, -71.0688],
+    'G5J': ['Saguenay', 'QC', 48.4285, -71.0688], 'G5K': ['Saguenay', 'QC', 48.4285, -71.0688],
+    'G5L': ['Saguenay', 'QC', 48.4285, -71.0688], 'G5N': ['Saguenay', 'QC', 48.4285, -71.0688],
+    'G5R': ['Rimouski', 'QC', 48.4501, -68.5334], 'G5T': ['Rimouski', 'QC', 48.4501, -68.5334],
+    'G5V': ['Rimouski', 'QC', 48.4501, -68.5334], 'G5X': ['Rimouski', 'QC', 48.4501, -68.5334],
+    'G5Z': ['Rimouski', 'QC', 48.4501, -68.5334],
+    'G6A': ['Levis', 'QC', 46.8036, -71.1772], 'G6B': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6C': ['Levis', 'QC', 46.8036, -71.1772], 'G6E': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6G': ['Levis', 'QC', 46.8036, -71.1772], 'G6H': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6J': ['Levis', 'QC', 46.8036, -71.1772], 'G6K': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6L': ['Levis', 'QC', 46.8036, -71.1772], 'G6P': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6S': ['Levis', 'QC', 46.8036, -71.1772], 'G6T': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6V': ['Levis', 'QC', 46.8036, -71.1772], 'G6W': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6X': ['Levis', 'QC', 46.8036, -71.1772], 'G6Y': ['Levis', 'QC', 46.8036, -71.1772],
+    'G6Z': ['Levis', 'QC', 46.8036, -71.1772],
+    'J0A': ['Granby area', 'QC', 45.3987, -72.7312], 'J0B': ['Sherbrooke area', 'QC', 45.4042, -71.8929],
+    'J0C': ['Drummondville area', 'QC', 45.8836, -72.4854], 'J0E': ['Saint-Hyacinthe area', 'QC', 45.6167, -72.9501],
+    'J0G': ['Sorel area', 'QC', 46.0334, -73.1167], 'J0H': ['Longueuil area', 'QC', 45.5315, -73.5182],
+    'J0J': ['Chateauguay area', 'QC', 45.3667, -73.7500], 'J0K': ['Joliette area', 'QC', 46.0167, -73.4501],
+    'J0L': ['Laval area', 'QC', 45.5991, -73.7124], 'J0M': ['Quebec area', 'QC', 46.5000, -71.5000],
+    'J0N': ['Gatineau area', 'QC', 45.4833, -75.7167], 'J0P': ['Valleyfield area', 'QC', 45.2501, -74.1334],
+    'J0R': ['Saint-Jerome area', 'QC', 45.7834, -74.0001], 'J0S': ['Salaberry area', 'QC', 45.2501, -74.1334],
+    'J0T': ['Mont-Tremblant area', 'QC', 46.1167, -74.5833], 'J0V': ['Lachute area', 'QC', 45.6500, -74.3333],
+    'J0W': ['Laurentides area', 'QC', 46.0000, -74.7000], 'J0X': ['Gatineau area', 'QC', 45.5000, -75.8000],
+    'J0Y': ['Laurentides area', 'QC', 46.5000, -75.5000], 'J0Z': ['Northern QC', 'QC', 47.5000, -73.5000],
+    'J1A': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1B': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1C': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1E': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1G': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1H': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1J': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1K': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1L': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1M': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1N': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1R': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1S': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1T': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J1X': ['Sherbrooke', 'QC', 45.4042, -71.8929], 'J1Z': ['Sherbrooke', 'QC', 45.4042, -71.8929],
+    'J2A': ['Granby', 'QC', 45.3987, -72.7312], 'J2B': ['Granby', 'QC', 45.3987, -72.7312],
+    'J2C': ['Granby', 'QC', 45.3987, -72.7312], 'J2E': ['Granby', 'QC', 45.3987, -72.7312],
+    'J2G': ['Drummondville', 'QC', 45.8836, -72.4854], 'J2H': ['Drummondville', 'QC', 45.8836, -72.4854],
+    'J2K': ['Saint-Hyacinthe', 'QC', 45.6167, -72.9501], 'J2L': ['Saint-Hyacinthe', 'QC', 45.6167, -72.9501],
+    'J2N': ['Joliette', 'QC', 46.0167, -73.4501], 'J2P': ['Joliette', 'QC', 46.0167, -73.4501],
+    'J2R': ['Sorel-Tracy', 'QC', 46.0334, -73.1167], 'J2S': ['Saint-Hyacinthe', 'QC', 45.6167, -72.9501],
+    'J2T': ['Saint-Hyacinthe', 'QC', 45.6167, -72.9501], 'J2W': ['Saint-Jean-sur-Richelieu', 'QC', 45.3167, -73.2667],
+    'J2X': ['Saint-Jean-sur-Richelieu', 'QC', 45.3167, -73.2667], 'J2Y': ['Saint-Jean-sur-Richelieu', 'QC', 45.3167, -73.2667],
+    'J3A': ['Longueuil', 'QC', 45.5315, -73.5182], 'J3B': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J3E': ['Longueuil', 'QC', 45.5315, -73.5182], 'J3G': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J3H': ['Brossard', 'QC', 45.4584, -73.4667], 'J3L': ['Chambly', 'QC', 45.4500, -73.2833],
+    'J3M': ['Saint-Hubert', 'QC', 45.5000, -73.4167], 'J3N': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J3P': ['Longueuil', 'QC', 45.5315, -73.5182], 'J3R': ['Brossard', 'QC', 45.4584, -73.4667],
+    'J3V': ['Brossard', 'QC', 45.4584, -73.4667], 'J3X': ['La Prairie', 'QC', 45.4167, -73.5000],
+    'J3Y': ['Longueuil', 'QC', 45.5315, -73.5182], 'J3Z': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4B': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4G': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4H': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4J': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4K': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4L': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4M': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4N': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4P': ['Saint-Lambert', 'QC', 45.5000, -73.5000], 'J4R': ['Saint-Lambert', 'QC', 45.5000, -73.5000],
+    'J4S': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4T': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4V': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4W': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4X': ['Longueuil', 'QC', 45.5315, -73.5182], 'J4Y': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J4Z': ['Longueuil', 'QC', 45.5315, -73.5182],
+    'J5A': ['Repentigny', 'QC', 45.7334, -73.4584], 'J5B': ['Repentigny', 'QC', 45.7334, -73.4584],
+    'J5C': ['Repentigny', 'QC', 45.7334, -73.4584], 'J5J': ['Terrebonne', 'QC', 45.7001, -73.6334],
+    'J5K': ['Terrebonne', 'QC', 45.7001, -73.6334], 'J5L': ['Blainville', 'QC', 45.6667, -73.8834],
+    'J5M': ['Blainville', 'QC', 45.6667, -73.8834], 'J5R': ['Repentigny', 'QC', 45.7334, -73.4584],
+    'J5T': ['Terrebonne', 'QC', 45.7001, -73.6334], 'J5V': ['Terrebonne', 'QC', 45.7001, -73.6334],
+    'J5W': ['Terrebonne', 'QC', 45.7001, -73.6334], 'J5X': ['Terrebonne', 'QC', 45.7001, -73.6334],
+    'J5Y': ['Terrebonne', 'QC', 45.7001, -73.6334], 'J5Z': ['Terrebonne', 'QC', 45.7001, -73.6334],
+    'J6A': ['Saint-Jerome', 'QC', 45.7834, -74.0001], 'J6E': ['Saint-Jerome', 'QC', 45.7834, -74.0001],
+    'J6J': ['Chateauguay', 'QC', 45.3667, -73.7500], 'J6K': ['Chateauguay', 'QC', 45.3667, -73.7500],
+    'J6N': ['Salaberry-de-Valleyfield', 'QC', 45.2501, -74.1334], 'J6R': ['Salaberry-de-Valleyfield', 'QC', 45.2501, -74.1334],
+    'J6S': ['Salaberry-de-Valleyfield', 'QC', 45.2501, -74.1334], 'J6T': ['Salaberry-de-Valleyfield', 'QC', 45.2501, -74.1334],
+    'J6V': ['Saint-Jerome', 'QC', 45.7834, -74.0001], 'J6W': ['Saint-Jerome', 'QC', 45.7834, -74.0001],
+    'J6X': ['Saint-Jerome', 'QC', 45.7834, -74.0001], 'J6Y': ['Saint-Jerome', 'QC', 45.7834, -74.0001],
+    'J6Z': ['Saint-Jerome', 'QC', 45.7834, -74.0001],
+    'J7A': ['Deux-Montagnes', 'QC', 45.5333, -73.9167], 'J7B': ['Deux-Montagnes', 'QC', 45.5333, -73.9167],
+    'J7C': ['Mirabel', 'QC', 45.6667, -74.0833], 'J7E': ['Boisbriand', 'QC', 45.6167, -73.8333],
+    'J7G': ['Sainte-Therese', 'QC', 45.6500, -73.8500], 'J7H': ['Sainte-Therese', 'QC', 45.6500, -73.8500],
+    'J7J': ['Sainte-Therese', 'QC', 45.6500, -73.8500], 'J7K': ['Lachute', 'QC', 45.6500, -74.3333],
+    'J7L': ['Lachute', 'QC', 45.6500, -74.3333], 'J7M': ['Sainte-Therese', 'QC', 45.6500, -73.8500],
+    'J7N': ['Mirabel', 'QC', 45.6667, -74.0833], 'J7P': ['Sainte-Therese', 'QC', 45.6500, -73.8500],
+    'J7R': ['Sainte-Therese', 'QC', 45.6500, -73.8500], 'J7T': ['Mirabel', 'QC', 45.6667, -74.0833],
+    'J7V': ['Vaudreuil-Dorion', 'QC', 45.4012, -74.0284], 'J7W': ['Vaudreuil-Dorion', 'QC', 45.4012, -74.0284],
+    'J7X': ['Vaudreuil-Dorion', 'QC', 45.4012, -74.0284], 'J7Y': ['Vaudreuil-Dorion', 'QC', 45.4012, -74.0284],
+    'J7Z': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8A': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8B': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8C': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8E': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8G': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8H': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8L': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8M': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8N': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8P': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8R': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8T': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8V': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8X': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J8Y': ['Gatineau', 'QC', 45.4833, -75.7167], 'J8Z': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J9A': ['Hull-Gatineau', 'QC', 45.4219, -75.7088], 'J9B': ['Aylmer-Gatineau', 'QC', 45.3936, -75.8435],
+    'J9H': ['Gatineau', 'QC', 45.4833, -75.7167], 'J9J': ['Gatineau', 'QC', 45.4833, -75.7167],
+    'J9L': ['Mont-Laurier', 'QC', 46.5500, -75.5000], 'J9P': ['Val-d Or', 'QC', 48.1000, -77.7833],
+    'J9T': ['Rouyn-Noranda', 'QC', 48.2334, -79.0167], 'J9V': ['Rouyn-Noranda', 'QC', 48.2334, -79.0167],
+    'J9X': ['Rouyn-Noranda', 'QC', 48.2334, -79.0167], 'J9Y': ['Rouyn-Noranda', 'QC', 48.2334, -79.0167],
+    'J9Z': ['Rouyn-Noranda', 'QC', 48.2334, -79.0167],
+    // ALBERTA
+    'T1H': ['Lethbridge', 'AB', 49.7019, -112.8434], 'T1J': ['Lethbridge', 'AB', 49.6955, -112.8553],
+    'T1K': ['Lethbridge', 'AB', 49.6850, -112.8227], 'T1M': ['Lethbridge', 'AB', 49.7107, -112.7887],
+    'T2A': ['Calgary', 'AB', 51.0459, -113.9768], 'T2B': ['Calgary', 'AB', 51.0597, -113.9603],
+    'T2C': ['Calgary', 'AB', 50.9903, -114.0009], 'T2E': ['Calgary', 'AB', 51.0779, -114.0277],
+    'T2G': ['Calgary', 'AB', 51.0326, -114.0718], 'T2H': ['Calgary', 'AB', 50.9982, -114.0779],
+    'T2J': ['Calgary', 'AB', 50.9731, -114.0730], 'T2K': ['Calgary', 'AB', 51.0881, -114.0743],
+    'T2L': ['Calgary', 'AB', 51.0818, -114.0997], 'T2M': ['Calgary', 'AB', 51.0700, -114.0757],
+    'T2N': ['Calgary', 'AB', 51.0563, -114.0987], 'T2P': ['Calgary', 'AB', 51.0499, -114.0720],
+    'T2R': ['Calgary', 'AB', 51.0404, -114.0822], 'T2S': ['Calgary', 'AB', 51.0197, -114.0812],
+    'T2T': ['Calgary', 'AB', 51.0283, -114.1020], 'T2V': ['Calgary', 'AB', 50.9913, -114.1049],
+    'T2W': ['Calgary', 'AB', 50.9631, -114.1230], 'T2X': ['Calgary', 'AB', 50.9347, -114.0832],
+    'T2Y': ['Calgary', 'AB', 50.9225, -114.0630], 'T2Z': ['Calgary', 'AB', 50.9268, -113.9975],
+    'T3A': ['Calgary', 'AB', 51.0755, -114.1731], 'T3B': ['Calgary', 'AB', 51.0744, -114.1989],
+    'T3C': ['Calgary', 'AB', 51.0359, -114.1405], 'T3E': ['Calgary', 'AB', 51.0234, -114.1580],
+    'T3G': ['Calgary', 'AB', 51.1209, -114.1970], 'T3H': ['Calgary', 'AB', 51.0197, -114.1958],
+    'T3J': ['Calgary', 'AB', 51.1149, -113.9524], 'T3K': ['Calgary', 'AB', 51.1315, -114.0499],
+    'T3L': ['Calgary', 'AB', 51.1301, -114.1868], 'T3M': ['Calgary', 'AB', 50.9042, -114.0209],
+    'T3N': ['Calgary', 'AB', 51.1715, -114.0658], 'T3P': ['Calgary', 'AB', 51.1804, -114.0359],
+    'T3R': ['Calgary', 'AB', 51.1706, -114.1706], 'T3Z': ['Calgary', 'AB', 51.0162, -114.2509],
+    'T4A': ['Airdrie', 'AB', 51.3088, -114.0174], 'T4B': ['Airdrie', 'AB', 51.2793, -114.0196],
+    'T4N': ['Red Deer', 'AB', 52.2718, -113.8116], 'T4P': ['Red Deer', 'AB', 52.2556, -113.7787],
+    'T4R': ['Red Deer', 'AB', 52.2953, -113.8261], 'T4S': ['Red Deer', 'AB', 52.3107, -113.8626],
+    'T4X': ['Sherwood Park', 'AB', 53.5273, -113.3182],
+    'T5A': ['Edmonton', 'AB', 53.5846, -113.3699], 'T5B': ['Edmonton', 'AB', 53.5601, -113.4519],
+    'T5C': ['Edmonton', 'AB', 53.5812, -113.5003], 'T5E': ['Edmonton', 'AB', 53.5904, -113.5338],
+    'T5G': ['Edmonton', 'AB', 53.5657, -113.4808], 'T5H': ['Edmonton', 'AB', 53.5427, -113.4909],
+    'T5J': ['Edmonton', 'AB', 53.5442, -113.4946], 'T5K': ['Edmonton', 'AB', 53.5387, -113.5185],
+    'T5L': ['Edmonton', 'AB', 53.5664, -113.5312], 'T5M': ['Edmonton', 'AB', 53.5510, -113.5413],
+    'T5N': ['Edmonton', 'AB', 53.5444, -113.5383], 'T5P': ['Edmonton', 'AB', 53.5369, -113.5740],
+    'T5R': ['Edmonton', 'AB', 53.5267, -113.5580], 'T5S': ['Edmonton', 'AB', 53.5310, -113.6200],
+    'T5T': ['Edmonton', 'AB', 53.5097, -113.6281], 'T5V': ['Edmonton', 'AB', 53.5743, -113.4633],
+    'T5W': ['Edmonton', 'AB', 53.5586, -113.4329], 'T5X': ['Edmonton', 'AB', 53.6006, -113.5077],
+    'T5Y': ['Edmonton', 'AB', 53.6119, -113.4580], 'T5Z': ['Edmonton', 'AB', 53.5940, -113.4105],
+    'T6A': ['Edmonton', 'AB', 53.5264, -113.4295], 'T6B': ['Edmonton', 'AB', 53.5228, -113.4061],
+    'T6C': ['Edmonton', 'AB', 53.5134, -113.4297], 'T6E': ['Edmonton', 'AB', 53.5165, -113.4828],
+    'T6G': ['Edmonton', 'AB', 53.5257, -113.5278], 'T6H': ['Edmonton', 'AB', 53.5009, -113.5154],
+    'T6J': ['Edmonton', 'AB', 53.4882, -113.4953], 'T6K': ['Edmonton', 'AB', 53.4866, -113.4430],
+    'T6L': ['Edmonton', 'AB', 53.4870, -113.3953], 'T6M': ['Edmonton', 'AB', 53.4901, -113.6170],
+    'T6N': ['Edmonton', 'AB', 53.4684, -113.4085], 'T6P': ['Edmonton', 'AB', 53.4729, -113.3648],
+    'T6R': ['Edmonton', 'AB', 53.4746, -113.5316], 'T6S': ['Edmonton', 'AB', 53.4633, -113.4836],
+    'T6T': ['Edmonton', 'AB', 53.4615, -113.3991], 'T6W': ['Edmonton', 'AB', 53.4424, -113.5553],
+    'T6X': ['Sherwood Park', 'AB', 53.4986, -113.2845],
+    'T7N': ['St Albert', 'AB', 53.6347, -113.6398], 'T7P': ['St Albert', 'AB', 53.6529, -113.6234],
+    'T7X': ['St Albert', 'AB', 53.6172, -113.5827],
+    'T8A': ['Sherwood Park', 'AB', 53.5376, -113.2700], 'T8B': ['Sherwood Park', 'AB', 53.5161, -113.2826],
+    'T8C': ['Leduc', 'AB', 53.2575, -113.5504], 'T8H': ['Leduc', 'AB', 53.2667, -113.5501],
+    'T8L': ['Fort Saskatchewan', 'AB', 53.7131, -113.2115], 'T8N': ['Fort Saskatchewan', 'AB', 53.7069, -113.2042],
+    'T8V': ['Grande Prairie', 'AB', 55.1707, -118.7884], 'T8W': ['Grande Prairie', 'AB', 55.1606, -118.7484],
+    'T8X': ['Grande Prairie', 'AB', 55.1811, -118.8197],
+    'T9H': ['Fort McMurray', 'AB', 56.7265, -111.3790], 'T9J': ['Fort McMurray', 'AB', 56.7432, -111.4002],
+    'T9K': ['Fort McMurray', 'AB', 56.7631, -111.3658],
+    'T9V': ['Lloydminster', 'AB', 53.2834, -110.0001], 'T9W': ['Lloydminster', 'AB', 53.2995, -110.0263],
+    // BC
+    'V2P': ['Chilliwack', 'BC', 49.1579, -121.9514], 'V2R': ['Chilliwack', 'BC', 49.1579, -121.9514],
+    'V2S': ['Abbotsford', 'BC', 49.0504, -122.3045], 'V2T': ['Abbotsford', 'BC', 49.0504, -122.3045],
+    'V2W': ['Maple Ridge', 'BC', 49.2198, -122.5985], 'V2X': ['Maple Ridge', 'BC', 49.2198, -122.5985],
+    'V2Y': ['Langley', 'BC', 49.0997, -122.6604], 'V2Z': ['Langley', 'BC', 49.0997, -122.6604],
+    'V3A': ['Langley', 'BC', 49.0997, -122.6604], 'V3B': ['Port Coquitlam', 'BC', 49.2620, -122.7890],
+    'V3C': ['Port Coquitlam', 'BC', 49.2620, -122.7890], 'V3E': ['Coquitlam', 'BC', 49.2838, -122.7932],
+    'V3H': ['Port Moody', 'BC', 49.2842, -122.8519], 'V3J': ['Coquitlam', 'BC', 49.2838, -122.7932],
+    'V3K': ['Coquitlam', 'BC', 49.2838, -122.7932], 'V3L': ['New Westminster', 'BC', 49.2057, -122.9110],
+    'V3M': ['New Westminster', 'BC', 49.2057, -122.9110], 'V3N': ['Burnaby', 'BC', 49.2488, -122.9805],
+    'V3R': ['Surrey', 'BC', 49.1913, -122.8490], 'V3S': ['Surrey', 'BC', 49.1913, -122.8490],
+    'V3T': ['Surrey', 'BC', 49.1913, -122.8490], 'V3V': ['Surrey', 'BC', 49.1913, -122.8490],
+    'V3W': ['Surrey', 'BC', 49.1913, -122.8490], 'V3X': ['Surrey', 'BC', 49.1913, -122.8490],
+    'V3Y': ['Langley', 'BC', 49.0997, -122.6604], 'V4A': ['Surrey', 'BC', 49.1913, -122.8490],
+    'V4B': ['White Rock', 'BC', 49.0254, -122.8020], 'V4C': ['Surrey', 'BC', 49.1913, -122.8490],
+    'V4G': ['Delta', 'BC', 49.0847, -123.0586], 'V4K': ['Delta', 'BC', 49.0847, -123.0586],
+    'V4L': ['Delta', 'BC', 49.0847, -123.0586], 'V4M': ['Delta', 'BC', 49.0847, -123.0586],
+    'V4N': ['Surrey', 'BC', 49.1913, -122.8490], 'V4R': ['Maple Ridge', 'BC', 49.2198, -122.5985],
+    'V5A': ['Burnaby', 'BC', 49.2488, -122.9805], 'V5B': ['Burnaby', 'BC', 49.2488, -122.9805],
+    'V5C': ['Burnaby', 'BC', 49.2488, -122.9805], 'V5E': ['Burnaby', 'BC', 49.2488, -122.9805],
+    'V5G': ['Burnaby', 'BC', 49.2488, -122.9805], 'V5H': ['Burnaby', 'BC', 49.2488, -122.9805],
+    'V5J': ['Burnaby', 'BC', 49.2488, -122.9805], 'V5K': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5L': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5M': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5N': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5P': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5R': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5S': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5T': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5V': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5W': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5X': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V5Y': ['Vancouver', 'BC', 49.2827, -123.1207], 'V5Z': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6A': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6B': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6C': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6E': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6G': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6H': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6J': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6K': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6L': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6M': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6N': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6P': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6R': ['Vancouver', 'BC', 49.2827, -123.1207], 'V6S': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V6T': ['UBC Vancouver', 'BC', 49.2606, -123.2460], 'V6V': ['Richmond', 'BC', 49.1666, -123.1336],
+    'V6W': ['Richmond', 'BC', 49.1666, -123.1336], 'V6X': ['Richmond', 'BC', 49.1666, -123.1336],
+    'V6Y': ['Richmond', 'BC', 49.1666, -123.1336], 'V6Z': ['Vancouver', 'BC', 49.2827, -123.1207],
+    'V7A': ['Richmond', 'BC', 49.1666, -123.1336], 'V7B': ['Richmond', 'BC', 49.1666, -123.1336],
+    'V7C': ['Richmond', 'BC', 49.1666, -123.1336], 'V7E': ['Richmond', 'BC', 49.1666, -123.1336],
+    'V7G': ['North Vancouver', 'BC', 49.3163, -123.0693], 'V7H': ['North Vancouver', 'BC', 49.3163, -123.0693],
+    'V7J': ['North Vancouver', 'BC', 49.3163, -123.0693], 'V7K': ['North Vancouver', 'BC', 49.3163, -123.0693],
+    'V7L': ['North Vancouver', 'BC', 49.3163, -123.0693], 'V7M': ['North Vancouver', 'BC', 49.3163, -123.0693],
+    'V7N': ['North Vancouver', 'BC', 49.3163, -123.0693], 'V7P': ['North Vancouver', 'BC', 49.3163, -123.0693],
+    'V7R': ['North Vancouver', 'BC', 49.3163, -123.0693], 'V7S': ['West Vancouver', 'BC', 49.3692, -123.1653],
+    'V7T': ['West Vancouver', 'BC', 49.3692, -123.1653], 'V7V': ['West Vancouver', 'BC', 49.3692, -123.1653],
+    'V7W': ['West Vancouver', 'BC', 49.3692, -123.1653],
+    'V8N': ['Victoria', 'BC', 48.4284, -123.3656], 'V8P': ['Victoria', 'BC', 48.4284, -123.3656],
+    'V8R': ['Victoria', 'BC', 48.4284, -123.3656], 'V8S': ['Victoria', 'BC', 48.4284, -123.3656],
+    'V8T': ['Victoria', 'BC', 48.4284, -123.3656], 'V8V': ['Victoria', 'BC', 48.4284, -123.3656],
+    'V8W': ['Victoria', 'BC', 48.4284, -123.3656], 'V8X': ['Saanich', 'BC', 48.5000, -123.4167],
+    'V8Y': ['Saanich', 'BC', 48.5000, -123.4167], 'V8Z': ['Saanich', 'BC', 48.5000, -123.4167],
+    'V9A': ['Victoria', 'BC', 48.4284, -123.3656], 'V9B': ['Langford', 'BC', 48.4493, -123.5056],
+    'V9C': ['Colwood', 'BC', 48.4260, -123.4958], 'V9E': ['View Royal', 'BC', 48.4511, -123.4345],
+    'V9L': ['Duncan', 'BC', 48.7787, -123.7076], 'V9M': ['Courtenay', 'BC', 49.6887, -124.9934],
+    'V9N': ['Courtenay', 'BC', 49.6887, -124.9934], 'V9P': ['Parksville', 'BC', 49.3141, -124.3117],
+    'V9R': ['Nanaimo', 'BC', 49.1659, -123.9401], 'V9S': ['Nanaimo', 'BC', 49.1659, -123.9401],
+    'V9T': ['Nanaimo', 'BC', 49.1659, -123.9401], 'V9V': ['Nanaimo', 'BC', 49.1659, -123.9401],
+    'V9W': ['Campbell River', 'BC', 50.0167, -125.2501], 'V9Y': ['Port Alberni', 'BC', 49.2336, -124.8053],
+    // MANITOBA
+    'R0J': ['McCreary', 'MB', 50.7833, -99.4833], 'R0K': ['Brandon area', 'MB', 49.8485, -99.9501],
+    'R0G': ['Portage la Prairie area', 'MB', 49.9728, -98.2917],
+    'R0H': ['Morden area', 'MB', 49.1918, -98.0876], 'R0L': ['Swan River area', 'MB', 52.1001, -101.2668],
+    'R0M': ['Russell area', 'MB', 50.7667, -101.2833], 'R0A': ['Steinbach area', 'MB', 49.5251, -96.6834],
+    'R0B': ['Lac du Bonnet area', 'MB', 50.2500, -95.5000], 'R0C': ['Selkirk area', 'MB', 50.1441, -96.8844],
+    'R0E': ['Beausejour area', 'MB', 50.0617, -96.5195],
+    'R2C': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2E': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2G': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2H': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2J': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2K': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2L': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2M': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2N': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2P': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2R': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2V': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2W': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R2X': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R2Y': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3A': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3B': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3C': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3E': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3G': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3H': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3J': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3K': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3L': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3M': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3N': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3P': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3R': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3S': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3T': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3V': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3W': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R3X': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R3Y': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R4A': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R4G': ['Winnipeg', 'MB', 49.8951, -97.1384],
+    'R4H': ['Winnipeg', 'MB', 49.8951, -97.1384], 'R5A': ['Steinbach', 'MB', 49.5251, -96.6834],
+    'R5G': ['Steinbach', 'MB', 49.5251, -96.6834], 'R6M': ['Morden', 'MB', 49.1918, -98.0876],
+    'R6W': ['Winkler', 'MB', 49.1818, -97.9376], 'R7A': ['Brandon', 'MB', 49.8485, -99.9501],
+    'R7B': ['Brandon', 'MB', 49.8485, -99.9501], 'R7C': ['Brandon', 'MB', 49.8485, -99.9501],
+    'R7N': ['Brandon', 'MB', 49.8485, -99.9501], 'R8A': ['Dauphin', 'MB', 51.1501, -100.0501],
+    'R8N': ['Thompson', 'MB', 55.7435, -97.8553], 'R9A': ['The Pas', 'MB', 53.8251, -101.2501],
+    // SASKATCHEWAN
+    'S4L': ['Regina', 'SK', 50.4452, -104.6189], 'S4N': ['Regina', 'SK', 50.4452, -104.6189],
+    'S4P': ['Regina', 'SK', 50.4452, -104.6189], 'S4R': ['Regina', 'SK', 50.4452, -104.6189],
+    'S4S': ['Regina', 'SK', 50.4452, -104.6189], 'S4T': ['Regina', 'SK', 50.4452, -104.6189],
+    'S4V': ['Regina', 'SK', 50.4452, -104.6189], 'S4W': ['Regina', 'SK', 50.4452, -104.6189],
+    'S4X': ['Regina', 'SK', 50.4452, -104.6189], 'S4Y': ['Regina', 'SK', 50.4452, -104.6189],
+    'S4Z': ['Regina', 'SK', 50.4452, -104.6189], 'S6H': ['Moose Jaw', 'SK', 50.3934, -105.5518],
+    'S6J': ['Moose Jaw', 'SK', 50.3934, -105.5518], 'S6K': ['Moose Jaw', 'SK', 50.3934, -105.5518],
+    'S7H': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7J': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S7K': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7L': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S7M': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7N': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S7P': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7R': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S7S': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7T': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S7V': ['Saskatoon', 'SK', 52.1332, -106.6700], 'S7W': ['Saskatoon', 'SK', 52.1332, -106.6700],
+    'S9A': ['Prince Albert', 'SK', 53.2001, -105.7501], 'S9H': ['Swift Current', 'SK', 50.2834, -107.7968],
+    'S9V': ['North Battleford', 'SK', 52.7834, -108.2834], 'S9X': ['Yorkton', 'SK', 51.2167, -102.4667],
+    // NOVA SCOTIA
+    'B3A': ['Halifax', 'NS', 44.6488, -63.5752], 'B3B': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B3H': ['Halifax', 'NS', 44.6488, -63.5752], 'B3J': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B3K': ['Halifax', 'NS', 44.6488, -63.5752], 'B3L': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B3M': ['Halifax', 'NS', 44.6488, -63.5752], 'B3N': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B3P': ['Halifax', 'NS', 44.6488, -63.5752], 'B3R': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B3S': ['Halifax', 'NS', 44.6488, -63.5752], 'B3T': ['Halifax', 'NS', 44.6488, -63.5752],
+    'B2R': ['Dartmouth', 'NS', 44.6667, -63.5667], 'B2S': ['Dartmouth', 'NS', 44.6667, -63.5667],
+    'B2T': ['Dartmouth', 'NS', 44.6667, -63.5667], 'B2V': ['Dartmouth', 'NS', 44.6667, -63.5667],
+    'B2W': ['Dartmouth', 'NS', 44.6667, -63.5667], 'B2X': ['Dartmouth', 'NS', 44.6667, -63.5667],
+    'B2Y': ['Dartmouth', 'NS', 44.6667, -63.5667], 'B2Z': ['Dartmouth', 'NS', 44.6667, -63.5667],
+    'B1A': ['Glace Bay', 'NS', 46.1970, -59.9574], 'B1B': ['Sydney', 'NS', 46.1368, -60.1942],
+    'B1P': ['Sydney', 'NS', 46.1368, -60.1942], 'B2A': ['New Glasgow', 'NS', 45.5918, -62.6501],
+    'B2G': ['Antigonish', 'NS', 45.6237, -61.9969], 'B2J': ['Truro', 'NS', 45.3651, -63.2860],
+    'B2N': ['Truro', 'NS', 45.3651, -63.2860], 'B4N': ['Kentville', 'NS', 45.0702, -64.4951],
+    'B4V': ['Bridgewater', 'NS', 44.3751, -64.5168], 'B5A': ['Yarmouth', 'NS', 43.8334, -66.1168],
+    // NEW BRUNSWICK
+    'E1A': ['Moncton', 'NB', 46.0878, -64.7782], 'E1B': ['Moncton', 'NB', 46.0878, -64.7782],
+    'E1C': ['Moncton', 'NB', 46.0878, -64.7782], 'E1E': ['Moncton', 'NB', 46.0878, -64.7782],
+    'E1G': ['Moncton', 'NB', 46.0878, -64.7782], 'E1H': ['Moncton', 'NB', 46.0878, -64.7782],
+    'E1J': ['Riverview', 'NB', 46.0607, -64.8033], 'E1V': ['Miramichi', 'NB', 47.0251, -65.4834],
+    'E2A': ['Bathurst', 'NB', 47.6167, -65.6501], 'E2K': ['Campbellton', 'NB', 48.0051, -66.6734],
+    'E3A': ['Fredericton', 'NB', 45.9636, -66.6431], 'E3B': ['Fredericton', 'NB', 45.9636, -66.6431],
+    'E3C': ['Fredericton', 'NB', 45.9636, -66.6431], 'E3V': ['Edmundston', 'NB', 47.3668, -68.3251],
+    'E4A': ['Woodstock', 'NB', 46.1500, -67.5600], 'E4Z': ['Saint John', 'NB', 45.2733, -66.0633],
+    'E5A': ['Saint John', 'NB', 45.2733, -66.0633], 'E5B': ['Saint John', 'NB', 45.2733, -66.0633],
+    // PEI
+    'C1A': ['Charlottetown', 'PE', 46.2382, -63.1311], 'C1B': ['Charlottetown', 'PE', 46.2382, -63.1311],
+    'C1C': ['Charlottetown', 'PE', 46.2382, -63.1311], 'C1E': ['Charlottetown', 'PE', 46.2382, -63.1311],
+    'C1N': ['Summerside', 'PE', 46.3951, -63.7901],
+    // NEWFOUNDLAND
+    'A1A': ['St. Johns', 'NL', 47.5615, -52.7126], 'A1B': ['St. Johns', 'NL', 47.5615, -52.7126],
+    'A1C': ['St. Johns', 'NL', 47.5615, -52.7126], 'A1S': ['Mount Pearl', 'NL', 47.5190, -52.8057],
+    'A1V': ['Grand Falls-Windsor', 'NL', 48.9334, -55.6667], 'A1W': ['Corner Brook', 'NL', 48.9500, -57.9500],
+    'A2A': ['Corner Brook', 'NL', 48.9500, -57.9500], 'A2H': ['Grand Falls-Windsor', 'NL', 48.9334, -55.6667],
+    'A2V': ['Labrador City', 'NL', 52.9501, -66.9167],
+    // TERRITORIES
+    'X1A': ['Yellowknife', 'NT', 62.4540, -114.3718], 'Y1A': ['Whitehorse', 'YT', 60.7212, -135.0568],
+    'X0A': ['Iqaluit', 'NU', 63.7467, -68.5170],
+};
+
 // ── Postal/ZIP lookup ──────────────────────────────────────────────
-// Canada: Claude AI (exact city for full 6-char postal, handles rural areas)
-// USA: Zippopotam.us (free, CORS-friendly, accurate for US ZIPs)
+// Canada: built-in FSA table (instant, offline, no API needed)
+// USA: Zippopotam.us (free, CORS-friendly)
 async function lookupPostalCode(code) {
     const clean = code.trim().replace(/\s+/g, '').toUpperCase();
     // Canadian postal: A1A1A1 or A1A (FSA only)
@@ -462,39 +1000,10 @@ async function lookupPostalCode(code) {
     }
 
     if (isCA) {
-        // Use Claude AI for Canadian postal codes — handles rural/exact cities correctly
-        const formatted = clean.length === 6 ? (clean.slice(0, 3) + ' ' + clean.slice(3)) : clean;
-        try {
-            const res = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'anthropic-version': '2023-06-01',
-                    'anthropic-dangerous-direct-browser-access': 'true',
-                },
-                body: JSON.stringify({
-                    model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 150,
-                    messages: [{
-                        role: 'user', content:
-                            'What city/town does Canadian postal code "' + formatted + '" belong to? ' +
-                            'Return ONLY a JSON object with these exact fields: ' +
-                            '{"name":"ExactCityName","province":"XX","lat":0.0,"lon":0.0} ' +
-                            'Use the specific city/town name, not a nearby landmark or mountain. ' +
-                            'Province must be 2-letter code (ON, MB, BC etc). No markdown, no explanation.'
-                    }]
-                })
-            });
-            if (res.ok) {
-                const d = await res.json();
-                const txt = ((d.content || []).find(function (b) { return b.type === 'text'; }) || {}).text || '';
-                const clean2 = txt.replace(/```[a-z]*\n?/gi, '').trim();
-                const obj = JSON.parse(clean2);
-                if (obj.name && obj.province && obj.lat && obj.lon) {
-                    return { name: obj.name, province: obj.province, lat: parseFloat(obj.lat), lon: parseFloat(obj.lon) };
-                }
-            }
-        } catch (e) { }
+        // Look up FSA (first 3 chars) in built-in table — instant, no API, works offline
+        const fsa = clean.slice(0, 3);
+        const entry = CA_FSA[fsa];
+        if (entry) return { name: entry[0], province: entry[1], lat: entry[2], lon: entry[3] };
         throw new Error('notfound');
     }
 }
@@ -505,10 +1014,15 @@ function ManualSaveForm({ value, T, onSave }) {
     const comma = q.lastIndexOf(',');
     const defaultName = comma > 0 ? q.slice(0, comma).trim() : q;
     const defaultProv = comma > 0 ? q.slice(comma + 1).trim().toUpperCase().slice(0, 2) : '';
-    const [tab, setTab] = useState('postal'); // 'postal' | 'manual'
+    const [tab, setTab] = useState('postal');
     const [postal, setPostal] = useState('');
     const [postalLoading, setPostalLoading] = useState(false);
     const [postalError, setPostalError] = useState('');
+    // Confirm step — shown after lookup so user can correct city name
+    const [confirm, setConfirm] = useState(null); // {name,prov,lat,lon}
+    const [confirmName, setConfirmName] = useState('');
+    const [confirmProv, setConfirmProv] = useState('');
+    // Manual tab fields
     const [name, setName] = useState(defaultName);
     const [prov, setProv] = useState(defaultProv);
     const [lat, setLat] = useState('');
@@ -519,28 +1033,34 @@ function ManualSaveForm({ value, T, onSave }) {
         const code = postal.trim();
         if (!code) return;
         const clean = code.replace(/\s+/g, '').toUpperCase();
-        // Canadian: 3-char FSA or full 6-char postal
         const isCA = /^[A-Z]\d[A-Z](\d[A-Z]\d)?$/.test(clean);
-        // US ZIP: exactly 5 digits
         const isUS = /^\d{5}$/.test(clean);
         if (!isCA && !isUS) {
-            setPostalError('🇨🇦 Canada: enter full postal code (e.g. R0J1B0) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
+            setPostalError('🇨🇦 Canada: full postal code (e.g. K0H1Z0) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
             return;
         }
-        setPostalLoading(true); setPostalError('');
+        setPostalLoading(true); setPostalError(''); setConfirm(null);
         try {
             const result = await lookupPostalCode(code);
-            if (!result || !result.name) {
-                setPostalError('Code not found — try another or use Manual tab');
-                setPostalLoading(false); return;
-            }
-            onSave(result.name, result.province, String(result.lat), String(result.lon));
+            // Always show confirm step — city name EMPTY so user must type it
+            // Coordinates from FSA are useful even if city name isn't
+            setConfirm({ lat: result ? result.lat : 0, lon: result ? result.lon : 0, province: result ? result.province : '' });
+            setConfirmName(''); // never pre-fill — user types exact city
+            setConfirmProv(result ? result.province : (isCA ? '' : ''));
         } catch (e) {
-            if (e.message === 'invalid') {
-                setPostalError('🇨🇦 Canada: enter full postal code (e.g. R0J1B0) · 🇺🇸 USA: 5-digit ZIP (e.g. 46750)');
-            } else {
-                setPostalError('Not found — check the code and try again, or use Manual tab');
-            }
+            // Even if lookup fails, show confirm with empty fields
+            setConfirm({ lat: 0, lon: 0, province: '' });
+            setConfirmName('');
+            setConfirmProv(isCA ? clean.slice(0, 1) === 'M' || clean.slice(0, 1) === 'L' || clean.slice(0, 1) === 'K' || clean.slice(0, 1) === 'N' ? 'ON' :
+                clean.slice(0, 1) === 'H' || clean.slice(0, 1) === 'G' || clean.slice(0, 1) === 'J' ? 'QC' :
+                    clean.slice(0, 1) === 'T' ? 'AB' :
+                        clean.slice(0, 1) === 'V' ? 'BC' :
+                            clean.slice(0, 1) === 'S' ? 'SK' :
+                                clean.slice(0, 1) === 'R' ? 'MB' :
+                                    clean.slice(0, 1) === 'E' ? 'NB' :
+                                        clean.slice(0, 1) === 'B' ? 'NS' :
+                                            clean.slice(0, 1) === 'C' ? 'PE' :
+                                                clean.slice(0, 1) === 'A' ? 'NL' : '' : '');
         }
         setPostalLoading(false);
     }
@@ -560,7 +1080,7 @@ function ManualSaveForm({ value, T, onSave }) {
             {/* Tab switcher */}
             <div style={{ display: 'flex', background: T.bg, borderRadius: 8, padding: 3, gap: 3, marginBottom: 10 }}>
                 {[['postal', '📮 Postal / ZIP'], ['manual', '✏️ Manual']].map(([k, l]) => (
-                    <button key={k} onMouseDown={function (e) { e.preventDefault(); setTab(k); }} onTouchEnd={function (e) { e.preventDefault(); setTab(k); }}
+                    <button key={k} onMouseDown={function (e) { e.preventDefault(); setTab(k); setConfirm(null); }} onTouchEnd={function (e) { e.preventDefault(); setTab(k); setConfirm(null); }}
                         style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', background: tab === k ? T.card : T.bg, color: tab === k ? T.text : T.textSec, fontWeight: tab === k ? 700 : 400, fontSize: 12, cursor: 'pointer', boxShadow: tab === k ? '0 1px 3px rgba(0,0,0,.1)' : 'none', fontFamily: 'inherit' }}>
                         {l}
                     </button>
@@ -568,37 +1088,73 @@ function ManualSaveForm({ value, T, onSave }) {
             </div>
 
             {/* Postal / ZIP tab */}
-            {tab === 'postal' && (
-                <div>
+            {tab === 'postal' && (<div>
+                {!confirm && (<>
                     <div style={{ fontSize: 11, color: T.textSec, marginBottom: 6, lineHeight: 1.5 }}>
-                        Enter postal/ZIP code to auto-find city and coordinates:
+                        Enter postal/ZIP code — you can edit the city name before saving:
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                        <input
-                            value={postal}
-                            onChange={function (e) { setPostal(e.target.value.toUpperCase()); setPostalError(''); }}
-                            placeholder="e.g. R0J1B0 or 46750"
-                            style={{ ...inpSt, flex: 1, letterSpacing: 1 }}
-                            autoComplete="off"
-                            onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doPostalLookup(); } }}
-                        />
-                        <button
-                            onMouseDown={function (e) { e.preventDefault(); doPostalLookup(); }}
+                        <input value={postal} onChange={function (e) { setPostal(e.target.value.toUpperCase()); setPostalError(''); }}
+                            placeholder="e.g. K0H1Z0 or 46750"
+                            style={{ ...inpSt, flex: 1, letterSpacing: 1 }} autoComplete="off"
+                            onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doPostalLookup(); } }} />
+                        <button onMouseDown={function (e) { e.preventDefault(); doPostalLookup(); }}
                             onTouchEnd={function (e) { e.preventDefault(); doPostalLookup(); }}
                             disabled={postalLoading}
                             style={{ background: T.primary, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: postalLoading ? 0.7 : 1 }}>
                             {postalLoading ? '…' : 'Look up'}
                         </button>
                     </div>
-                    {postalError && (
-                        <div style={{ fontSize: 11, color: '#DC2626', marginBottom: 6, lineHeight: 1.4 }}>{postalError}</div>
-                    )}
+                    {postalError && <div style={{ fontSize: 11, color: '#DC2626', marginBottom: 6, lineHeight: 1.4 }}>{postalError}</div>}
                     <div style={{ fontSize: 10, color: T.textSec, lineHeight: 1.6 }}>
-                        🇨🇦 Canada: full postal code — <b>R0J1B0</b>, <b>L5B3J1</b>, <b>K1A0A9</b><br />
+                        🇨🇦 Canada: full postal code — <b>K0H1Z0</b>, <b>R0J1B0</b>, <b>L5B3J1</b><br />
                         🇺🇸 USA: 5-digit ZIP — <b>46750</b>, <b>48201</b>, <b>60601</b>
                     </div>
-                </div>
-            )}
+                </>)}
+
+                {/* ── Confirm step: editable city name + province before saving ── */}
+                {confirm && (
+                    <div>
+                        <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', borderRadius: 8, padding: '8px 10px', marginBottom: 10, fontSize: 11, color: '#1E40AF', lineHeight: 1.5 }}>
+                            ✅ Got coordinates from postal code. Now type the <b>exact city name</b> below:
+                        </div>
+                        {/* City name — always empty, user must type */}
+                        <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City Name <span style={{ color: '#EF4444' }}>*</span></div>
+                        <input value={confirmName} onChange={function (e) { setConfirmName(e.target.value); }}
+                            placeholder="Type exact city name e.g. Kaladar"
+                            style={{ ...inpSt, marginBottom: 6, fontWeight: 600, fontSize: 15, borderColor: confirmName ? T.primary : '#EF4444' }}
+                            autoCorrect="off" autoCapitalize="words" />
+                        {!confirmName && <div style={{ fontSize: 10, color: '#EF4444', marginBottom: 6 }}>City name required</div>}
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                            <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Province/State</div>
+                                <input value={confirmProv} onChange={function (e) { setConfirmProv(e.target.value.toUpperCase().slice(0, 2)); }}
+                                    style={inpSt} maxLength={2} placeholder="ON" />
+                            </div>
+                            <div style={{ flex: 2 }}>
+                                <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>
+                                    {confirm.lat && confirm.lon ? 'Coordinates (from postal FSA)' : 'Coordinates — unknown'}
+                                </div>
+                                <div style={{ padding: '9px 10px', background: T.bg, borderRadius: 7, border: '1px solid ' + T.border, fontSize: 12, color: confirm.lat ? T.textSec : '#EF4444' }}>
+                                    {confirm.lat && confirm.lon ? confirm.lat.toFixed(4) + ', ' + confirm.lon.toFixed(4) : 'Not found — add manually'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <button onMouseDown={function (e) { e.preventDefault(); if (!confirmName.trim()) return; onSave(confirmName.trim(), confirmProv, String(confirm.lat || 0), String(confirm.lon || 0)); }}
+                                onTouchEnd={function (e) { e.preventDefault(); if (!confirmName.trim()) return; onSave(confirmName.trim(), confirmProv, String(confirm.lat || 0), String(confirm.lon || 0)); }}
+                                style={{ flex: 2, background: confirmName.trim() ? T.primary : '#94A3B8', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: confirmName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                                💾 {confirmName.trim() ? 'Save ' + confirmName.trim() : 'Enter city name first'}
+                            </button>
+                            <button onMouseDown={function (e) { e.preventDefault(); setConfirm(null); setPostal(''); }}
+                                onTouchEnd={function (e) { e.preventDefault(); setConfirm(null); setPostal(''); }}
+                                style={{ flex: 1, background: T.bg, color: T.textSec, border: '1px solid ' + T.border, borderRadius: 8, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                Back
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>)}
 
             {/* Manual tab */}
             {tab === 'manual' && (
@@ -606,7 +1162,7 @@ function ManualSaveForm({ value, T, onSave }) {
                     <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                         <div style={{ flex: 2 }}>
                             <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City Name</div>
-                            <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="e.g. Ingersoll" style={inpSt} />
+                            <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="e.g. Kaladar" style={inpSt} />
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Province/State</div>
@@ -616,11 +1172,11 @@ function ManualSaveForm({ value, T, onSave }) {
                     <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Latitude <span style={{ fontWeight: 400 }}>(optional)</span></div>
-                            <input value={lat} onChange={function (e) { setLat(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. 43.04" style={inpSt} inputMode="decimal" />
+                            <input value={lat} onChange={function (e) { setLat(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. 44.63" style={inpSt} inputMode="decimal" />
                         </div>
                         <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Longitude <span style={{ fontWeight: 400 }}>(optional)</span></div>
-                            <input value={lon} onChange={function (e) { setLon(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. -80.88" style={inpSt} inputMode="decimal" />
+                            <input value={lon} onChange={function (e) { setLon(e.target.value.replace(/[^0-9.\-]/g, '')); }} placeholder="e.g. -77.12" style={inpSt} inputMode="decimal" />
                         </div>
                     </div>
                     <button onMouseDown={doManualSave} onTouchEnd={function (e) { e.preventDefault(); doManualSave(e); }}
