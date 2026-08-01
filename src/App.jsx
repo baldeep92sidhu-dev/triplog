@@ -350,6 +350,61 @@ function saveCustomCity(name, province, lat, lon) {
     } catch (e) { }
 }
 
+// ── Shared Company database — persisted in localStorage ────────────
+// One shared list used for BOTH shipper and receiver fields, since
+// backhauls often mean the same company appears as both.
+// Each entry: {id, name, address, city} where city is the full
+// "City, Province/State" string matched against origin/destination.
+const _companyCache = { list: [] };
+(function loadCompanyCache() {
+    try {
+        const raw = localStorage.getItem('tl_companies');
+        if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) _companyCache.list = p; }
+    } catch (e) { }
+})();
+
+// Saves/updates a company after a trip is created.
+// role: 'origin' | 'destination' — tells us which city to attach.
+function saveCompany(name, address, city) {
+    if (!name || !name.trim()) return;
+    const nameKey = name.trim().toLowerCase();
+    const existingIdx = _companyCache.list.findIndex(function (c) { return c.name.toLowerCase() === nameKey; });
+    const entry = {
+        id: existingIdx >= 0 ? _companyCache.list[existingIdx].id : Date.now() + Math.random(),
+        name: name.trim(),
+        address: (address || '').trim(),
+        city: (city || '').trim()
+    };
+    if (existingIdx >= 0) {
+        // Update in place — keep most recent address/city for this company
+        _companyCache.list[existingIdx] = entry;
+    } else {
+        _companyCache.list.push(entry);
+    }
+    try { localStorage.setItem('tl_companies', JSON.stringify(_companyCache.list)); } catch (e) { }
+}
+
+function searchCompanies(query) {
+    const q = (query || '').trim().toLowerCase();
+    if (q.length < 1) return [];
+    return _companyCache.list.filter(function (c) { return c.name.toLowerCase().includes(q); }).slice(0, 6);
+}
+
+function getAllCompanies() { return _companyCache.list; }
+
+function deleteCompany(id) {
+    _companyCache.list = _companyCache.list.filter(function (c) { return c.id !== id; });
+    try { localStorage.setItem('tl_companies', JSON.stringify(_companyCache.list)); } catch (e) { }
+}
+
+function updateCompany(id, name, address, city) {
+    const idx = _companyCache.list.findIndex(function (c) { return c.id === id; });
+    if (idx >= 0) {
+        _companyCache.list[idx] = { id: id, name: (name || '').trim(), address: (address || '').trim(), city: (city || '').trim() };
+        try { localStorage.setItem('tl_companies', JSON.stringify(_companyCache.list)); } catch (e) { }
+    }
+}
+
 // Province/state → approximate center coordinates (regular hyphens)
 const PROV_COORDS = {
     ON: [44.0, -79.0], QC: [46.5, -72.5], BC: [53.7, -127.6], AB: [53.9, -116.5],
@@ -1414,6 +1469,63 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
     );
 }
 
+// ═══════════════════════════ CONTACT AUTOCOMPLETE ════════════════
+// Shipper/Receiver name field — searches SHARED company database.
+// On pick, returns both address and city so origin/destination can
+// auto-fill too (useful since backhauls often reuse the same company).
+function ContactAutoComplete({ type, value, onChange, onSelectCompany, T, placeholder }) {
+    const [results, setResults] = useState([]);
+    const [open, setOpen] = useState(false);
+    const picking = useRef(false);
+
+    function handleChange(v) {
+        onChange(v);
+        const found = searchCompanies(v);
+        setResults(found);
+        setOpen(found.length > 0);
+    }
+
+    function pick(c) {
+        picking.current = false;
+        onChange(c.name);
+        setResults([]); setOpen(false);
+        onSelectCompany && onSelectCompany(c);
+    }
+
+    function handleBlur() {
+        setTimeout(function () { if (!picking.current) setOpen(false); }, 250);
+    }
+
+    return (
+        <div style={{ position: 'relative', flex: 1.4 }}>
+            <input value={value} onChange={function (e) { handleChange(e.target.value); }}
+                onFocus={function () { if (results.length > 0) setOpen(true); }}
+                onBlur={handleBlur}
+                placeholder={placeholder}
+                autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
+                style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + (type === 'shipper' ? '#BFDBFE' : '#FECACA'), borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
+            {open && results.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.card, border: '2px solid ' + (type === 'shipper' ? '#3B82F6' : '#DC2626'), borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden', boxShadow: '0 6px 16px rgba(0,0,0,.15)' }}>
+                    {results.map(function (c, i) {
+                        return (
+                            <div key={i}
+                                onTouchStart={function () { picking.current = true; }}
+                                onTouchEnd={function (e) { e.preventDefault(); pick(c); }}
+                                onMouseDown={function (e) { e.preventDefault(); pick(c); }}
+                                style={{ padding: '9px 12px', borderBottom: i < results.length - 1 ? '1px solid ' + T.border : 'none', cursor: 'pointer' }}
+                                onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
+                                onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.name}</div>
+                                {(c.address || c.city) && <div style={{ fontSize: 11, color: T.textSec, marginTop: 1 }}>{c.address}{c.address && c.city ? ', ' : ''}{c.city}</div>}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ═══════════════════════════ VEHICLES SCREEN ═════════════════════
 const VEHICLE_TYPES = ['Semi Truck', 'Box Truck', 'Flatbed', 'Tanker', 'Reefer', 'Dump Truck', 'Pickup/Work Truck', 'Sprinter Van', 'Other'];
 
@@ -1461,7 +1573,7 @@ const YEAR_OPTIONS = (() => { const y = []; const cur = new Date().getFullYear()
 
 function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
     const { T } = useT();
-    const [activeTab, setActiveTab] = useState('trucks'); // 'trucks' | 'trailers'
+    const [activeTab, setActiveTab] = useState('trucks'); // 'trucks' | 'trailers' | 'companies'
     const blank = { id: null, unit_number: '', make: '', model: '', year: '', vehicle_type: 'Semi Truck', fuel_tank_capacity: '', license_plate: '', driver_name: '', notes: '' };
     const [form, setForm] = useState(blank);
     const [editing, setEditing] = useState(false);
@@ -1471,7 +1583,27 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
     const [newTrailer, setNewTrailer] = useState('');
     const [trailerSaved, setTrailerSaved] = useState(false);
     const [confirmDelTrailer, setConfirmDelTrailer] = useState(null);
+    // Companies state — force re-render since _companyCache is module-level
+    const [companiesList, setCompaniesList] = useState(() => getAllCompanies());
+    const [companySearch, setCompanySearch] = useState('');
+    const [editingCompany, setEditingCompany] = useState(null); // company being edited
+    const [companyForm, setCompanyForm] = useState({ name: '', address: '', city: '' });
+    const [confirmDelCompany, setConfirmDelCompany] = useState(null);
     const sf = (k, v) => { setForm(p => ({ ...p, [k]: v })); setSaved(false); };
+
+    function refreshCompanies() { setCompaniesList(getAllCompanies().slice()); }
+    function startEditCompany(c) { setEditingCompany(c.id); setCompanyForm({ name: c.name, address: c.address, city: c.city }); }
+    function cancelEditCompany() { setEditingCompany(null); setCompanyForm({ name: '', address: '', city: '' }); }
+    function saveEditCompany() {
+        if (!companyForm.name.trim()) { alert('Company name is required.'); return; }
+        updateCompany(editingCompany, companyForm.name, companyForm.address, companyForm.city);
+        refreshCompanies();
+        cancelEditCompany();
+    }
+    function removeCompany(id) { deleteCompany(id); refreshCompanies(); setConfirmDelCompany(null); }
+    const filteredCompanies = companySearch.trim()
+        ? companiesList.filter(c => c.name.toLowerCase().includes(companySearch.toLowerCase()) || (c.city || '').toLowerCase().includes(companySearch.toLowerCase()))
+        : companiesList;
 
     // When make changes, reset model so stale model doesn't persist
     function setMake(v) { setForm(p => ({ ...p, make: v, model: '' })); setSaved(false); }
@@ -1553,10 +1685,10 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginBottom: 12 }}>🚛 Fleet</div>
                 {/* Tab switcher */}
                 <div style={{ display: 'flex', background: 'rgba(255,255,255,.15)', borderRadius: 10, padding: 3, gap: 3 }}>
-                    {[['trucks', '🚛 Trucks'], ['trailers', '🚚 Trailers']].map(([k, l]) => (
+                    {[['trucks', '🚛 Trucks'], ['trailers', '🚚 Trailers'], ['companies', '🏢 Companies']].map(([k, l]) => (
                         <button key={k} onClick={() => setActiveTab(k)}
-                            style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: activeTab === k ? '#fff' : 'transparent', color: activeTab === k ? T.primary : 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                            {l}{k === 'trailers' && trailers.length > 0 ? ` (${trailers.length})` : ''}
+                            style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: activeTab === k ? '#fff' : 'transparent', color: activeTab === k ? T.primary : 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                            {l}{k === 'trailers' && trailers.length > 0 ? ` (${trailers.length})` : ''}{k === 'companies' && companiesList.length > 0 ? ` (${companiesList.length})` : ''}
                         </button>
                     ))}
                 </div>
@@ -1669,6 +1801,66 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
                     ))}
                 </div>
             )}
+
+            {/* ── COMPANIES TAB — shared shipper/receiver database ── */}
+            {activeTab === 'companies' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px' }}>
+                    <div style={{ fontSize: 11, color: T.textSec, marginBottom: 12, lineHeight: 1.5, background: T.card, borderRadius: 10, padding: '10px 12px' }}>
+                        💡 Companies are saved automatically after you create a trip with a Shipper/Receiver. One shared list — pick the same company for either role since backhauls often repeat.
+                    </div>
+                    <input value={companySearch} onChange={e => setCompanySearch(e.target.value)} placeholder="🔍 Search companies…"
+                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 14, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', marginBottom: 14 }} />
+
+                    {filteredCompanies.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '40px 20px', color: T.textSec }}>
+                            <div style={{ fontSize: 56 }}>🏢</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, marginTop: 12, color: T.text }}>{companiesList.length === 0 ? 'No Companies Yet' : 'No Results'}</div>
+                            <div style={{ fontSize: 13, marginTop: 6 }}>{companiesList.length === 0 ? 'Add a Shipper or Receiver when creating a trip — they\'ll appear here automatically.' : 'Try a different search'}</div>
+                        </div>
+                    ) : filteredCompanies.map(c => (
+                        <div key={c.id} style={{ background: T.card, borderRadius: 12, marginBottom: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,.05)' }}>
+                            {confirmDelCompany === c.id ? (
+                                <div style={{ background: '#FEF2F2', padding: '12px 14px' }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>🗑️ Delete {c.name}?</div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button onClick={() => removeCompany(c.id)} style={{ flex: 1, background: '#DC2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                                        <button onClick={() => setConfirmDelCompany(null)} style={{ flex: 1, background: T.border, color: T.text, border: 'none', borderRadius: 7, padding: '8px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                    </div>
+                                </div>
+                            ) : editingCompany === c.id ? (
+                                <div style={{ padding: '14px' }}>
+                                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Company Name</div>
+                                    <input value={companyForm.name} onChange={e => setCompanyForm(p => ({ ...p, name: e.target.value }))}
+                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 8 }} />
+                                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Address</div>
+                                    <input value={companyForm.address} onChange={e => setCompanyForm(p => ({ ...p, address: e.target.value }))}
+                                        placeholder="e.g. 123 Main St"
+                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 8 }} />
+                                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City</div>
+                                    <input value={companyForm.city} onChange={e => setCompanyForm(p => ({ ...p, city: e.target.value }))}
+                                        placeholder="e.g. Richmond Hill, ON"
+                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 10 }} />
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button onClick={saveEditCompany} style={{ flex: 1, background: T.primary, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>💾 Save</button>
+                                        <button onClick={cancelEditCompany} style={{ flex: 1, background: T.bg, color: T.textSec, border: `1px solid ${T.border}`, borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px' }}>
+                                    <span style={{ fontSize: 20, marginRight: 12 }}>🏢</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{c.name}</div>
+                                        {c.address && <div style={{ fontSize: 12, color: T.textSec, marginTop: 1 }}>{c.address}</div>}
+                                        {c.city && <div style={{ fontSize: 12, color: T.textSec }}>{c.city}</div>}
+                                    </div>
+                                    <button onClick={() => startEditCompany(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 6, color: T.accent }}>✏️</button>
+                                    <button onClick={() => setConfirmDelCompany(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 6, color: '#EF4444' }}>🗑️</button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 
@@ -1752,7 +1944,7 @@ function isCrossBorder(originLabel, destLabel) {
 }
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
-    const blank = { trip_number: '', trailer_number: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '' };
+    const blank = { trip_number: '', trailer_number: '', shipper_name: '', shipper_address: '', receiver_name: '', receiver_address: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '', is_deadhead: false };
     const [f, setF] = useState(blank);
     const [oC, setOC] = useState(null);
     const [dC, setDC] = useState(null);
@@ -1773,7 +1965,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
     useEffect(() => {
         if (!visible) return;
         if (editTrip) {
-            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '' });
+            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', shipper_name: editTrip.shipper_name || '', shipper_address: editTrip.shipper_address || '', receiver_name: editTrip.receiver_name || '', receiver_address: editTrip.receiver_address || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '', is_deadhead: !!editTrip.is_deadhead });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
             setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
@@ -1850,9 +2042,13 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         if (!f.origin || !f.destination || !f.pickup_date) { alert('Please fill Origin, Destination, and Pickup Date.'); return; }
         const selectedVehicle = vehicles.find(v => String(v.id) === String(f.vehicle_id));
         onSave({
-            trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
+            trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), shipper_name: f.shipper_name.trim(), shipper_address: f.shipper_address.trim(), receiver_name: f.receiver_name.trim(), receiver_address: f.receiver_address.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: f.is_deadhead ? 0 : (parseFloat(f.trip_rate) || 0), rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null, is_deadhead: f.is_deadhead,
             border_crossing: selectedBorder ? selectedBorder.name : null
         });
+        // Save companies to the shared database AFTER trip is created —
+        // shipper gets the origin city, receiver gets the destination city
+        if (f.shipper_name.trim()) saveCompany(f.shipper_name, f.shipper_address, f.origin);
+        if (f.receiver_name.trim()) saveCompany(f.receiver_name, f.receiver_address, f.destination);
     }
 
     const gpsBtn = (field) => (<button onClick={() => gpsGet(field)} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '0 0 8px', marginTop: -4, fontFamily: 'inherit' }}>{gps ? '⏳' : '📍'} Use GPS Location</button>);
@@ -1902,9 +2098,51 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     <button onClick={() => s('trip_number', nextTripNumber(trips || []))} style={{ fontSize: 11, color: T.primary, background: 'none', border: `1px solid ${T.primary}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Use next →</button>
                 </div>
             )}
+            {/* ── Shipper (pickup contact) ── */}
+            <div style={{ background: '#EFF6FF', border: `1px solid #BFDBFE`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#1E40AF', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    📤 Shipper
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <ContactAutoComplete type="shipper" value={f.shipper_name} onChange={v => s('shipper_name', v)}
+                        onSelectCompany={c => {
+                            if (c.address) s('shipper_address', c.address);
+                            if (c.city) {
+                                s('origin', c.city);
+                                // Try to find matching coords from local database for accurate distance
+                                const match = localSearch(c.city)[0];
+                                if (match) { onOS({ display: match.label, lat: match.lat, lon: match.lon }); }
+                            }
+                        }}
+                        placeholder="Company / contact name" T={T} />
+                    <input value={f.shipper_address} onChange={e => s('shipper_address', e.target.value)} placeholder="Address e.g. 123 John Ave"
+                        style={{ flex: 1, border: '1px solid #BFDBFE', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+            </div>
             <Lbl c="Origin" T={T} />
             <PlacesAuto value={f.origin} onChange={v => { s('origin', v); if (!v) { setOC(null); setDistCalced(false); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onOS} />
             {gpsBtn('origin')}
+
+            {/* ── Receiver (delivery contact) ── */}
+            <div style={{ background: '#FEF2F2', border: `1px solid #FECACA`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#DC2626', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    📥 Receiver
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                    <ContactAutoComplete type="receiver" value={f.receiver_name} onChange={v => s('receiver_name', v)}
+                        onSelectCompany={c => {
+                            if (c.address) s('receiver_address', c.address);
+                            if (c.city) {
+                                s('destination', c.city);
+                                const match = localSearch(c.city)[0];
+                                if (match) { onDS({ display: match.label, lat: match.lat, lon: match.lon }); }
+                            }
+                        }}
+                        placeholder="Company / contact name" T={T} />
+                    <input value={f.receiver_address} onChange={e => s('receiver_address', e.target.value)} placeholder="Address e.g. 456 Main St"
+                        style={{ flex: 1, border: '1px solid #FECACA', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+            </div>
             <Lbl c="Destination" T={T} />
             <PlacesAuto value={f.destination} onChange={v => { s('destination', v); if (!v) { setDC(null); setDistCalced(false); setSelectedBorder(null); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onDS} />
             {gpsBtn('destination')}
@@ -1976,6 +2214,27 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             ) : (
                 <input value={f.distance} onChange={e => { s('distance', e.target.value.replace(/[^0-9.]/g, '')); setDistCalced(false); }} placeholder="Auto-fills when both cities selected" style={iSt(T)} />
             )}
+
+            {/* ── Loaded vs Deadhead ── */}
+            <Lbl c="Trip Type" T={T} />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+                <button onClick={() => s('is_deadhead', false)}
+                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: `2px solid ${!f.is_deadhead ? '#059669' : T.border}`, background: !f.is_deadhead ? '#ECFDF5' : T.card, cursor: 'pointer', textAlign: 'center' }}>
+                    <div style={{ fontSize: 18 }}>📦</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: !f.is_deadhead ? '#059669' : T.textSec, marginTop: 2 }}>Loaded</div>
+                </button>
+                <button onClick={() => s('is_deadhead', true)}
+                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: `2px solid ${f.is_deadhead ? '#DC2626' : T.border}`, background: f.is_deadhead ? '#FEF2F2' : T.card, cursor: 'pointer', textAlign: 'center' }}>
+                    <div style={{ fontSize: 18 }}>💨</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: f.is_deadhead ? '#DC2626' : T.textSec, marginTop: 2 }}>Deadhead</div>
+                </button>
+            </div>
+            <div style={{ fontSize: 11, color: T.textSec, marginBottom: 12, lineHeight: 1.4 }}>
+                {f.is_deadhead
+                    ? '💨 Empty miles repositioning to next pickup — no revenue, still costs fuel.'
+                    : '📦 Hauling freight — revenue-generating loaded miles.'}
+            </div>
+
             {/* ── Pickup & Delivery dates side by side ── */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 0 }}>
                 <div style={{ flex: 1 }}>
@@ -2001,20 +2260,27 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     {TRIP_STATUSES.map(st => { const a = f.status === st; const col = STATUS_COLORS[st] || T.primary; return <button key={st} onClick={() => s('status', st)} style={{ padding: '7px 14px', borderRadius: 20, marginRight: 8, marginBottom: 8, border: `1px solid ${a ? col : T.border}`, background: a ? col : T.card, color: a ? '#fff' : T.textSec, fontWeight: a ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>{st}</button>; })}
                 </div>
             </>)}
-            <Lbl c="Rate Type" T={T} />
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <TB on={f.rate_type === 'per_mile'} label="$/mile" onClick={() => s('rate_type', 'per_mile')} T={T} />
-                <TB on={f.rate_type === 'per_km'} label="$/km" onClick={() => s('rate_type', 'per_km')} T={T} />
-                <TB on={f.rate_type === 'total'} label="Total Pay" onClick={() => s('rate_type', 'total')} T={T} />
-            </div>
-            <Lbl c={f.rate_type === 'per_mile' ? 'Rate ($/mile)' : f.rate_type === 'per_km' ? 'Rate ($/km)' : 'Total Pay ($)'} T={T} />
-            <input value={f.trip_rate} onChange={e => s('trip_rate', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={iSt(T)} />
-            {rateNum > 0 && distNum > 0 && (
-                <div style={{ background: T.primary + '18', border: `1px solid ${T.primary}44`, borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5 }}>💰 Earnings Preview</div>
-                    {f.rate_type === 'per_mile' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/mi</span> × <span style={{ fontWeight: 600 }}>{distNum.toFixed(1)} mi</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${earnings.toFixed(2)}</span></div>}
-                    {f.rate_type === 'per_km' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/km</span> × <span style={{ fontWeight: 600 }}>{(distNum * 1.60934).toFixed(1)} km</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${(rateNum * (distNum * 1.60934)).toFixed(2)}</span></div>}
-                    {f.rate_type === 'total' && <div style={{ fontSize: 14, color: T.text }}>Total Pay: <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${rateNum.toFixed(2)}</span>{perMileEarned && <span style={{ fontSize: 12, color: T.textSec, marginLeft: 8 }}>(≈ ${perMileEarned}/mi)</span>}</div>}
+            {!f.is_deadhead ? (<>
+                <Lbl c="Rate Type" T={T} />
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <TB on={f.rate_type === 'per_mile'} label="$/mile" onClick={() => s('rate_type', 'per_mile')} T={T} />
+                    <TB on={f.rate_type === 'per_km'} label="$/km" onClick={() => s('rate_type', 'per_km')} T={T} />
+                    <TB on={f.rate_type === 'total'} label="Total Pay" onClick={() => s('rate_type', 'total')} T={T} />
+                </div>
+                <Lbl c={f.rate_type === 'per_mile' ? 'Rate ($/mile)' : f.rate_type === 'per_km' ? 'Rate ($/km)' : 'Total Pay ($)'} T={T} />
+                <input value={f.trip_rate} onChange={e => s('trip_rate', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={iSt(T)} />
+                {rateNum > 0 && distNum > 0 && (
+                    <div style={{ background: T.primary + '18', border: `1px solid ${T.primary}44`, borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5 }}>💰 Earnings Preview</div>
+                        {f.rate_type === 'per_mile' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/mi</span> × <span style={{ fontWeight: 600 }}>{distNum.toFixed(1)} mi</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${earnings.toFixed(2)}</span></div>}
+                        {f.rate_type === 'per_km' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/km</span> × <span style={{ fontWeight: 600 }}>{(distNum * 1.60934).toFixed(1)} km</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${(rateNum * (distNum * 1.60934)).toFixed(2)}</span></div>}
+                        {f.rate_type === 'total' && <div style={{ fontSize: 14, color: T.text }}>Total Pay: <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${rateNum.toFixed(2)}</span>{perMileEarned && <span style={{ fontSize: 12, color: T.textSec, marginLeft: 8 }}>(≈ ${perMileEarned}/mi)</span>}</div>}
+                    </div>
+                )}
+            </>) : (
+                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', marginBottom: 4 }}>💨 Deadhead — No Revenue</div>
+                    <div style={{ fontSize: 12, color: '#7F1D1D', lineHeight: 1.5 }}>This trip earns $0 and won't count toward revenue. It still logs {distNum > 0 ? distNum.toFixed(1) + ' miles' : 'miles'} against your fuel/maintenance costs — this is what your true cost-per-loaded-mile calculation needs.</div>
                 </div>
             )}
             <Lbl c="Currency" T={T} />
@@ -2136,6 +2402,18 @@ function Dashboard({ trips, expenses, navigate }) {
     const profit = mRev - mEx;
     const tProfit = tRev - tEx;
 
+    // Loaded vs Deadhead breakdown — the real cost-per-mile metric
+    const loadedTrips = useMemo(() => completedTrips.filter(t => !t.is_deadhead), [completedTrips]);
+    const deadheadTrips = useMemo(() => completedTrips.filter(t => t.is_deadhead), [completedTrips]);
+    const loadedMilesRaw = useMemo(() => loadedTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [loadedTrips]);
+    const deadheadMilesRaw = useMemo(() => deadheadTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [deadheadTrips]);
+    const loadedMiles = useKm ? (loadedMilesRaw * 1.60934) : loadedMilesRaw;
+    const deadheadMiles = useKm ? (deadheadMilesRaw * 1.60934) : deadheadMilesRaw;
+    const deadheadPct = tMiRaw > 0 ? ((deadheadMilesRaw / tMiRaw) * 100) : 0;
+    // True cost per loaded mile = all costs ÷ only loaded miles (deadhead still costs fuel but earns nothing)
+    const costPerLoadedMile = loadedMilesRaw > 0 ? (tEx / loadedMilesRaw) : 0;
+    const revPerLoadedMile = loadedMilesRaw > 0 ? (tRev / loadedMilesRaw) : 0;
+
     const recent = useMemo(() => {
         if (fMode === 'month') return trips.slice(0, 3);
         if (fMode === 'custom' && sd && ed) return trips.filter(t => t.trip_date >= sd && t.trip_date <= ed).slice(0, 3);
@@ -2147,10 +2425,11 @@ function Dashboard({ trips, expenses, navigate }) {
             {/* Header */}
             <div style={{ padding: '24px 20px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 28 }}>🚛</span>
-                <div>
+                <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 28, fontWeight: 800, color: T.text }}>TripLog</div>
                     <div style={{ fontSize: 14, color: T.textSec }}>Trucking Management Dashboard</div>
                 </div>
+                <button onClick={() => navigate('Settings')} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, width: 44, height: 44, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⚙️</button>
             </div>
 
             {/* Filter Period */}
@@ -2236,6 +2515,54 @@ function Dashboard({ trips, expenses, navigate }) {
                 <SC bg="#059669" icon="📊" value={fmtC(tRev)} label="Total Revenue" />
                 <SC bg={tProfit >= 0 ? '#10B981' : '#DC2626'} icon="💰" value={fmtC(tProfit)} label="Total Profit/Loss" />
             </StatGrid>
+
+            {/* ── Loaded vs Deadhead breakdown — true cost-per-loaded-mile ── */}
+            {tMiRaw > 0 && (
+                <div style={{ margin: '4px 16px 8px' }}>
+                    <div style={{ padding: '4px 0 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#0891B2', textTransform: 'uppercase', letterSpacing: .8 }}>📦 Loaded vs 💨 Deadhead</span>
+                    </div>
+                    <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: '0 2px 8px rgba(0,0,0,.06)' }}>
+                        {/* Visual bar */}
+                        <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 10, background: T.border }}>
+                            <div style={{ width: `${100 - deadheadPct}%`, background: '#059669' }} />
+                            <div style={{ width: `${deadheadPct}%`, background: '#DC2626' }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#059669' }} />
+                                <span style={{ fontSize: 12, color: T.textSec }}>Loaded: <b style={{ color: T.text }}>{loadedMiles.toFixed(0)} {distUnit}</b> ({(100 - deadheadPct).toFixed(0)}%)</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: 5, background: '#DC2626' }} />
+                                <span style={{ fontSize: 12, color: T.textSec }}>Deadhead: <b style={{ color: T.text }}>{deadheadMiles.toFixed(0)} {distUnit}</b> ({deadheadPct.toFixed(0)}%)</span>
+                            </div>
+                        </div>
+                        {/* True cost-per-loaded-mile */}
+                        <div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                            <div style={{ flex: 1, textAlign: 'center' }}>
+                                <div style={{ fontSize: 18, fontWeight: 800, color: '#DC2626' }}>${costPerLoadedMile.toFixed(2)}</div>
+                                <div style={{ fontSize: 10, color: T.textSec, marginTop: 2 }}>True cost / loaded mi</div>
+                            </div>
+                            <div style={{ width: 1, background: T.border }} />
+                            <div style={{ flex: 1, textAlign: 'center' }}>
+                                <div style={{ fontSize: 18, fontWeight: 800, color: '#059669' }}>${revPerLoadedMile.toFixed(2)}</div>
+                                <div style={{ fontSize: 10, color: T.textSec, marginTop: 2 }}>Revenue / loaded mi</div>
+                            </div>
+                            <div style={{ width: 1, background: T.border }} />
+                            <div style={{ flex: 1, textAlign: 'center' }}>
+                                <div style={{ fontSize: 18, fontWeight: 800, color: (revPerLoadedMile - costPerLoadedMile) >= 0 ? '#059669' : '#DC2626' }}>${(revPerLoadedMile - costPerLoadedMile).toFixed(2)}</div>
+                                <div style={{ fontSize: 10, color: T.textSec, marginTop: 2 }}>Net / loaded mi</div>
+                            </div>
+                        </div>
+                        {deadheadPct > 20 && (
+                            <div style={{ marginTop: 10, background: '#FEF3C7', borderRadius: 8, padding: '8px 10px', fontSize: 11, color: '#92400E', lineHeight: 1.4 }}>
+                                ⚠️ {deadheadPct.toFixed(0)}% deadhead is high — look for backhauls to cut empty miles.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Recent Trips */}
             <div style={{ padding: '12px 20px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2364,9 +2691,24 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter, onSaveTrip 
                                     <div style={{ background: STATUS_COLORS[trip.status] || T.primary, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div style={{ flex: 1, overflow: 'hidden' }}>
                                             {trip.trip_number && <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,.8)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Trip # {trip.trip_number}</div>}
+                                            {/* Shipper / Receiver names — small labels above origin/destination */}
+                                            {(trip.shipper_name || trip.receiver_name) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
+                                                    <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>
+                                                        {trip.shipper_name || ''}
+                                                    </span>
+                                                    {(trip.shipper_name && trip.receiver_name) && <span style={{ fontSize: 10, color: 'rgba(255,255,255,.5)' }}>→</span>}
+                                                    <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '45%' }}>
+                                                        {trip.receiver_name || ''}
+                                                    </span>
+                                                </div>
+                                            )}
                                             <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trip.origin || 'Unknown'} → {trip.destination || 'Unknown'}</div>
                                         </div>
-                                        <span style={{ background: 'rgba(255,255,255,.25)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, marginLeft: 8, whiteSpace: 'nowrap', letterSpacing: .3 }}>{trip.status || 'Active'}</span>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                                            <span style={{ background: 'rgba(255,255,255,.25)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, marginLeft: 8, whiteSpace: 'nowrap', letterSpacing: .3 }}>{trip.status || 'Active'}</span>
+                                            {trip.is_deadhead && <span style={{ background: 'rgba(0,0,0,.25)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap' }}>💨 Deadhead</span>}
+                                        </div>
                                     </div>
                                     <div style={{ padding: 14 }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: T.textSec }}>
@@ -2527,6 +2869,25 @@ function TripDetail({ tripId, trips, expenses, setExpenses, pods, setPods, goBac
                 </div>
             </div>
 
+            {/* ── Shipper / Receiver info ── */}
+            {(d.shipper_name || d.shipper_address || d.receiver_name || d.receiver_address) && (
+                <div style={{ display: 'flex', margin: '12px 16px 0', gap: 8 }}>
+                    {(d.shipper_name || d.shipper_address) && (
+                        <div style={{ flex: 1, background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 12, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, color: '#1E40AF', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>📤 Shipper</div>
+                            {d.shipper_name && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B' }}>{d.shipper_name}</div>}
+                            {d.shipper_address && <div style={{ fontSize: 11, color: '#1E40AF', marginTop: 2 }}>📍 {d.shipper_address}</div>}
+                        </div>
+                    )}
+                    {(d.receiver_name || d.receiver_address) && (
+                        <div style={{ flex: 1, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 10, fontWeight: 800, color: '#DC2626', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>📥 Receiver</div>
+                            {d.receiver_name && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B' }}>{d.receiver_name}</div>}
+                            {d.receiver_address && <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>📍 {d.receiver_address}</div>}
+                        </div>
+                    )}
+                </div>
+            )}
             {/* ── Summary bar ── */}
             <div style={{ display: 'flex', margin: '12px 16px 0', gap: 8 }}>
                 <div style={{ flex: 1, background: '#EFF6FF', borderRadius: 12, padding: '10px 14px', textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: T.primary }}>{tExp.length}</div><div style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>Expenses</div></div>
@@ -2733,7 +3094,7 @@ function Reports({ trips, expenses }) {
 }
 
 // ═══════════════════════════ SETTINGS ════════════════════════════
-function Settings({ vc, setVc }) {
+function Settings({ vc, setVc, navigate }) {
     const { T, dark, toggle, useKm, toggleUnits, useLiters, toggleFuelUnits } = useT();
     function Row({ em, bg, label, sub, onPr, right }) {
         return (<div onClick={onPr} style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: `1px solid ${T.border}`, cursor: onPr ? 'pointer' : 'default', background: T.card }}><div style={{ width: 36, height: 36, borderRadius: 10, background: (bg || T.primary) + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 14, fontSize: 18 }}>{em}</div><div style={{ flex: 1 }}><div style={{ fontSize: 15, fontWeight: 500, color: T.text }}>{label}</div>{sub && <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>{sub}</div>}</div>{right || <span style={{ color: T.textSec, fontSize: 18 }}>›</span>}</div>);
@@ -2743,6 +3104,9 @@ function Settings({ vc, setVc }) {
     return (
         <div style={{ flex: 1, overflowY: 'auto', background: T.bg, paddingBottom: 24 }}>
             <div style={{ background: T.primary, padding: '20px 20px 30px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <button onClick={() => navigate && navigate('Dashboard')} style={{ background: 'rgba(255,255,255,.2)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>← Back</button>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <div style={{ width: 56, height: 56, borderRadius: 28, background: 'rgba(255,255,255,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🚛</div>
                     <div><div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>TripLog</div><div style={{ fontSize: 13, color: 'rgba(255,255,255,.8)' }}>Trucking Management App</div></div>
@@ -2772,38 +3136,19 @@ function Settings({ vc, setVc }) {
 
 // ═══════════════════════════ TAB BAR ═════════════════════════════
 function TabBar({ active, onPress, T }) {
-    const tabs = [{ k: 'Dashboard', i: '📊', l: 'Dashboard' }, { k: 'Trips', i: '🚛', l: 'Trips' }, { k: 'Vehicles', i: '🔧', l: 'Vehicles' }, { k: 'Reports', i: '📈', l: 'Reports' }, { k: 'Settings', i: '⚙️', l: 'Settings' }];
+    const tabs = [
+        { k: 'Dashboard', i: '📊', l: 'Home' },
+        { k: 'Trips', i: '🚛', l: 'Trips' },
+        { k: 'Vehicles', i: '🔧', l: 'Fleet' },
+        { k: 'Reports', i: '📈', l: 'Reports' },
+    ];
     return (
-        <div style={{
-            display: 'flex',
-            background: T.card,
-            borderTop: `1px solid ${T.border}`,
-            boxShadow: '0 -2px 12px rgba(0,0,0,.08)',
-            flexShrink: 0,
-            zIndex: 50,
-            // Safe area for home indicator on iPhone
-            paddingBottom: 'env(safe-area-inset-bottom,0px)',
-        }}>
+        <div style={{ display: 'flex', background: T.card, borderTop: `1px solid ${T.border}`, boxShadow: '0 -2px 12px rgba(0,0,0,.08)', flexShrink: 0, zIndex: 50, paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>
             {tabs.map(tab => (
                 <button key={tab.k} onClick={() => onPress(tab.k)}
-                    style={{
-                        flex: 1,
-                        paddingTop: 10,
-                        paddingBottom: 8,
-                        border: 'none',
-                        background: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 2,
-                        minHeight: 54,
-                        // Prevent iOS tap highlight delay
-                        WebkitTapHighlightColor: 'transparent',
-                        touchAction: 'manipulation',
-                    }}>
-                    <span style={{ fontSize: 22 }}>{tab.i}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: active === tab.k ? T.primary : '#94A3B8' }}>{tab.l}</span>
+                    style={{ flex: 1, paddingTop: 8, paddingBottom: 6, border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, minHeight: 52, WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}>
+                    <span style={{ fontSize: 20 }}>{tab.i}</span>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: active === tab.k ? T.primary : '#94A3B8' }}>{tab.l}</span>
                 </button>
             ))}
         </div>
@@ -2834,7 +3179,6 @@ function AppInner() {
     }
     function goBack() { if (stack.length > 1) setStack(p => p.slice(0, -1)); }
 
-    // Auto-save new trailer numbers to the trailers database
     function saveTrip(data) {
         if (data.trailer_number && data.trailer_number.trim()) {
             const num = data.trailer_number.trim().toUpperCase();
@@ -2844,7 +3188,6 @@ function AppInner() {
                 return [...ts, { id: Date.now(), unit_number: num }];
             });
         }
-        // Check vehicle conflict — can't have two In Progress trips for same truck
         if (data.status === 'In Progress' && data.vehicle_id) {
             const conflict = trips.find(t =>
                 String(t.vehicle_id) === String(data.vehicle_id) &&
@@ -2860,59 +3203,19 @@ function AppInner() {
     }
     return (
         <>
-            {/* ── iOS PWA viewport fix ─────────────────────────────────────
-    position:fixed fills the exact visual viewport on iPhone.
-    This ensures touch coordinates match visual positions exactly,
-    fixing the "click lands lower than tap" issue in Safari PWA mode.
-    safe-area-inset-* handles notch + home indicator correctly.
-──────────────────────────────────────────────────────────────── */}
             <style>{`
-  html,body{
-    margin:0;padding:0;
-    height:100%;
-    overflow:hidden;
-    /* Prevent iOS bounce scroll which shifts layout */
-    overscroll-behavior:none;
-    -webkit-overflow-scrolling:touch;
-  }
-  #root{
-    position:fixed;
-    top:0;left:0;right:0;bottom:0;
-    /* Let JS handle safe areas — don't double-apply */
-    overflow:hidden;
-  }
-  /* Remove 300ms tap delay everywhere */
-  *{
-    touch-action:manipulation;
-    -webkit-tap-highlight-color:transparent;
-  }
-  /* Prevent text selection on buttons/tabs */
-  button{
-    -webkit-user-select:none;
-    user-select:none;
-  }
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none;-webkit-overflow-scrolling:touch;}
+  #root{position:fixed;top:0;left:0;right:0;bottom:0;overflow:hidden;}
+  *{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+  button{-webkit-user-select:none;user-select:none;}
 `}</style>
-            <div style={{
-                // position:fixed so the container is pinned to the visual viewport
-                // This is the key fix — scrolling/bouncing can't shift our layout
-                position: 'fixed',
-                top: 0, left: 0, right: 0, bottom: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif",
-                maxWidth: 430,
-                margin: '0 auto',
-                background: T.bg,
-                overflow: 'hidden',
-                // Top safe area for iPhone notch/Dynamic Island
-                paddingTop: 'env(safe-area-inset-top,0px)',
-            }}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", maxWidth: 430, margin: '0 auto', background: T.bg, overflow: 'hidden', paddingTop: 'env(safe-area-inset-top,0px)' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                     {cur === 'Dashboard' && <Dashboard trips={trips} expenses={expenses} navigate={nav} />}
                     {cur === 'Trips' && <Trips trips={trips} setTrips={setTrips} navigate={nav} vehicles={vehicles} initialFilter={tripsFilter} onSaveTrip={saveTrip} />}
                     {cur === 'Vehicles' && <Vehicles vehicles={vehicles} setVehicles={setVehicles} trailers={trailers} setTrailers={setTrailers} />}
                     {cur === 'Reports' && <Reports trips={trips} expenses={expenses} />}
-                    {cur === 'Settings' && <Settings vc={vc} setVc={setVc} />}
+                    {cur === 'Settings' && <Settings vc={vc} setVc={setVc} navigate={nav} />}
                     {cur === 'TripDetail' && <TripDetail tripId={selId} trips={trips} expenses={expenses} setExpenses={setExpenses} pods={pods} setPods={setPods} goBack={goBack} />}
                 </div>
                 {cur !== 'TripDetail' && <TabBar active={activeTab} onPress={nav} T={T} />}
