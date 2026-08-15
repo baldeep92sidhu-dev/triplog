@@ -365,18 +365,22 @@ const _companyCache = { list: [] };
 
 // Saves/updates a company after a trip is created.
 // role: 'origin' | 'destination' — tells us which city to attach.
-function saveCompany(name, address, city) {
+function saveCompany(name, address, city, postal, lat, lon) {
     if (!name || !name.trim()) return;
     const nameKey = name.trim().toLowerCase();
     const existingIdx = _companyCache.list.findIndex(function (c) { return c.name.toLowerCase() === nameKey; });
+    const prev = existingIdx >= 0 ? _companyCache.list[existingIdx] : null;
     const entry = {
-        id: existingIdx >= 0 ? _companyCache.list[existingIdx].id : Date.now() + Math.random(),
+        id: prev ? prev.id : Date.now() + Math.random(),
         name: name.trim(),
         address: (address || '').trim(),
-        city: (city || '').trim()
+        city: (city || '').trim(),
+        // Postal/lat/lon: use new values if provided, otherwise keep previous (don't wipe precision on a plain re-save)
+        postal: (postal && postal.trim()) ? postal.trim().toUpperCase() : (prev ? prev.postal : ''),
+        lat: (lat != null) ? lat : (prev ? prev.lat : null),
+        lon: (lon != null) ? lon : (prev ? prev.lon : null)
     };
     if (existingIdx >= 0) {
-        // Update in place — keep most recent address/city for this company
         _companyCache.list[existingIdx] = entry;
     } else {
         _companyCache.list.push(entry);
@@ -397,10 +401,10 @@ function deleteCompany(id) {
     try { localStorage.setItem('tl_companies', JSON.stringify(_companyCache.list)); } catch (e) { }
 }
 
-function updateCompany(id, name, address, city) {
+function updateCompany(id, name, address, city, postal, lat, lon) {
     const idx = _companyCache.list.findIndex(function (c) { return c.id === id; });
     if (idx >= 0) {
-        _companyCache.list[idx] = { id: id, name: (name || '').trim(), address: (address || '').trim(), city: (city || '').trim() };
+        _companyCache.list[idx] = { id: id, name: (name || '').trim(), address: (address || '').trim(), city: (city || '').trim(), postal: (postal || '').trim().toUpperCase(), lat: lat != null ? lat : null, lon: lon != null ? lon : null };
         try { localStorage.setItem('tl_companies', JSON.stringify(_companyCache.list)); } catch (e) { }
     }
 }
@@ -1470,13 +1474,17 @@ function PlacesAuto({ value, onChange, placeholder, T, onSelect }) {
 }
 
 // ═══════════════════════════ CONTACT AUTOCOMPLETE ════════════════
-// Shipper/Receiver name field — searches SHARED company database.
-// On pick, returns both address and city so origin/destination can
-// auto-fill too (useful since backhauls often reuse the same company).
-function ContactAutoComplete({ type, value, onChange, onSelectCompany, T, placeholder }) {
+// Shipper/Receiver/Deadhead name field — searches SHARED company database.
+// On pick, returns address, city, postal AND lat/lon so origin/destination
+// can auto-fill with a PRECISE pinpoint, not just a vague city center.
+function ContactAutoComplete({ type, value, onChange, onSelectCompany, T, placeholder, postal, onPostalChange }) {
     const [results, setResults] = useState([]);
     const [open, setOpen] = useState(false);
+    const [postalLoading, setPostalLoading] = useState(false);
+    const [postalError, setPostalError] = useState('');
     const picking = useRef(false);
+    const accent = type === 'shipper' ? '#3B82F6' : type === 'deadhead' ? '#F97316' : '#DC2626';
+    const borderLight = type === 'shipper' ? '#BFDBFE' : type === 'deadhead' ? '#FDBA74' : '#FECACA';
 
     function handleChange(v) {
         onChange(v);
@@ -1496,32 +1504,67 @@ function ContactAutoComplete({ type, value, onChange, onSelectCompany, T, placeh
         setTimeout(function () { if (!picking.current) setOpen(false); }, 250);
     }
 
+    async function doLookup() {
+        const code = (postal || '').trim();
+        if (!code) return;
+        const clean = code.replace(/\s+/g, '').toUpperCase();
+        const isCA = /^[A-Z]\d[A-Z](\d[A-Z]\d)?$/.test(clean);
+        const isUS = /^\d{5}$/.test(clean);
+        if (!isCA && !isUS) { setPostalError('Invalid code'); return; }
+        setPostalLoading(true); setPostalError('');
+        try {
+            const result = await lookupPostalCode(code);
+            if (result && result.lat && result.lon) {
+                onSelectCompany && onSelectCompany({ name: value, address: '', city: '', postalOnly: true, lat: result.lat, lon: result.lon, postalCityName: result.name, postalProvince: result.province });
+            } else {
+                setPostalError('Not found');
+            }
+        } catch (e) { setPostalError('Not found'); }
+        setPostalLoading(false);
+    }
+
     return (
-        <div style={{ position: 'relative', flex: 1.4 }}>
-            <input value={value} onChange={function (e) { handleChange(e.target.value); }}
-                onFocus={function () { if (results.length > 0) setOpen(true); }}
-                onBlur={handleBlur}
-                placeholder={placeholder}
-                autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
-                style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + (type === 'shipper' ? '#BFDBFE' : '#FECACA'), borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
-            {open && results.length > 0 && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.card, border: '2px solid ' + (type === 'shipper' ? '#3B82F6' : '#DC2626'), borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden', boxShadow: '0 6px 16px rgba(0,0,0,.15)' }}>
-                    {results.map(function (c, i) {
-                        return (
-                            <div key={i}
-                                onTouchStart={function () { picking.current = true; }}
-                                onTouchEnd={function (e) { e.preventDefault(); pick(c); }}
-                                onMouseDown={function (e) { e.preventDefault(); pick(c); }}
-                                style={{ padding: '9px 12px', borderBottom: i < results.length - 1 ? '1px solid ' + T.border : 'none', cursor: 'pointer' }}
-                                onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
-                                onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.name}</div>
-                                {(c.address || c.city) && <div style={{ fontSize: 11, color: T.textSec, marginTop: 1 }}>{c.address}{c.address && c.city ? ', ' : ''}{c.city}</div>}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+        <div>
+            <div style={{ position: 'relative', marginBottom: 6 }}>
+                <input value={value} onChange={function (e) { handleChange(e.target.value); }}
+                    onFocus={function () { if (results.length > 0) setOpen(true); }}
+                    onBlur={handleBlur}
+                    placeholder={placeholder}
+                    autoComplete="off" autoCorrect="off" autoCapitalize="words" spellCheck={false}
+                    style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + borderLight, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
+                {open && results.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: T.card, border: '2px solid ' + accent, borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden', boxShadow: '0 6px 16px rgba(0,0,0,.15)' }}>
+                        {results.map(function (c, i) {
+                            return (
+                                <div key={i}
+                                    onTouchStart={function () { picking.current = true; }}
+                                    onTouchEnd={function (e) { e.preventDefault(); pick(c); }}
+                                    onMouseDown={function (e) { e.preventDefault(); pick(c); }}
+                                    style={{ padding: '9px 12px', borderBottom: i < results.length - 1 ? '1px solid ' + T.border : 'none', cursor: 'pointer' }}
+                                    onMouseEnter={function (e) { e.currentTarget.style.background = T.bg; }}
+                                    onMouseLeave={function (e) { e.currentTarget.style.background = T.card; }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{c.name}</div>
+                                    {(c.address || c.city) && <div style={{ fontSize: 11, color: T.textSec, marginTop: 1 }}>{c.address}{c.address && c.city ? ', ' : ''}{c.city}</div>}
+                                    {c.postal && <div style={{ fontSize: 10, color: accent, marginTop: 1, fontWeight: 600 }}>📮 {c.postal}{c.lat ? ' · pinpointed' : ''}</div>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+            {/* ── Postal/ZIP field for precise pinpoint (important for large cities) ── */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input value={postal || ''} onChange={function (e) { onPostalChange && onPostalChange(e.target.value.toUpperCase()); setPostalError(''); }}
+                    placeholder="Postal/ZIP (optional, pinpoints exact spot)"
+                    style={{ flex: 1, boxSizing: 'border-box', border: '1px solid ' + borderLight, borderRadius: 7, padding: '7px 10px', fontSize: 12, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', letterSpacing: .5 }}
+                    onKeyDown={function (e) { if (e.key === 'Enter') { e.preventDefault(); doLookup(); } }} />
+                <button onMouseDown={function (e) { e.preventDefault(); doLookup(); }} onTouchEnd={function (e) { e.preventDefault(); doLookup(); }}
+                    disabled={postalLoading}
+                    style={{ background: accent, color: '#fff', border: 'none', borderRadius: 7, padding: '7px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, opacity: postalLoading ? 0.6 : 1 }}>
+                    {postalLoading ? '…' : '📍 Pin'}
+                </button>
+            </div>
+            {postalError && <div style={{ fontSize: 10, color: '#EF4444', marginTop: 3 }}>{postalError}</div>}
         </div>
     );
 }
@@ -1587,16 +1630,18 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
     const [companiesList, setCompaniesList] = useState(() => getAllCompanies());
     const [companySearch, setCompanySearch] = useState('');
     const [editingCompany, setEditingCompany] = useState(null); // company being edited
-    const [companyForm, setCompanyForm] = useState({ name: '', address: '', city: '' });
+    const [companyForm, setCompanyForm] = useState({ name: '', address: '', city: '', postal: '' });
     const [confirmDelCompany, setConfirmDelCompany] = useState(null);
     const sf = (k, v) => { setForm(p => ({ ...p, [k]: v })); setSaved(false); };
 
     function refreshCompanies() { setCompaniesList(getAllCompanies().slice()); }
-    function startEditCompany(c) { setEditingCompany(c.id); setCompanyForm({ name: c.name, address: c.address, city: c.city }); }
-    function cancelEditCompany() { setEditingCompany(null); setCompanyForm({ name: '', address: '', city: '' }); }
+    function startEditCompany(c) { setEditingCompany(c.id); setCompanyForm({ name: c.name, address: c.address, city: c.city, postal: c.postal || '' }); }
+    function cancelEditCompany() { setEditingCompany(null); setCompanyForm({ name: '', address: '', city: '', postal: '' }); }
     function saveEditCompany() {
         if (!companyForm.name.trim()) { alert('Company name is required.'); return; }
-        updateCompany(editingCompany, companyForm.name, companyForm.address, companyForm.city);
+        // Preserve existing lat/lon pinpoint — editing text fields shouldn't wipe a saved precise location
+        const existing = companiesList.find(c => c.id === editingCompany);
+        updateCompany(editingCompany, companyForm.name, companyForm.address, companyForm.city, companyForm.postal, existing ? existing.lat : null, existing ? existing.lon : null);
         refreshCompanies();
         cancelEditCompany();
     }
@@ -1839,7 +1884,16 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
                                     <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>City</div>
                                     <input value={companyForm.city} onChange={e => setCompanyForm(p => ({ ...p, city: e.target.value }))}
                                         placeholder="e.g. Richmond Hill, ON"
-                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 10 }} />
+                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 8 }} />
+                                    <div style={{ fontSize: 10, color: T.textSec, marginBottom: 3 }}>Postal/ZIP</div>
+                                    <input value={companyForm.postal} onChange={e => setCompanyForm(p => ({ ...p, postal: e.target.value.toUpperCase() }))}
+                                        placeholder="e.g. L4B 1B4 or 90001"
+                                        style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${T.border}`, borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.bg, outline: 'none', fontFamily: 'inherit', marginBottom: 6 }} />
+                                    {(() => {
+                                        const ex = companiesList.find(cc => cc.id === c.id); return ex && ex.lat ? (
+                                            <div style={{ fontSize: 10, color: '#059669', marginBottom: 8 }}>📍 Precise pinpoint saved — editing text above won't affect it. To update coordinates, re-select this company from a trip's Shipper/Receiver field using the postal Pin button.</div>
+                                        ) : null;
+                                    })()}
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         <button onClick={saveEditCompany} style={{ flex: 1, background: T.primary, color: '#fff', border: 'none', borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>💾 Save</button>
                                         <button onClick={cancelEditCompany} style={{ flex: 1, background: T.bg, color: T.textSec, border: `1px solid ${T.border}`, borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
@@ -1852,6 +1906,11 @@ function Vehicles({ vehicles, setVehicles, trailers, setTrailers }) {
                                         <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{c.name}</div>
                                         {c.address && <div style={{ fontSize: 12, color: T.textSec, marginTop: 1 }}>{c.address}</div>}
                                         {c.city && <div style={{ fontSize: 12, color: T.textSec }}>{c.city}</div>}
+                                        {(c.postal || c.lat) && (
+                                            <div style={{ fontSize: 11, color: '#059669', marginTop: 2, fontWeight: 600 }}>
+                                                {c.postal ? '📮 ' + c.postal : ''}{c.postal && c.lat ? ' · ' : ''}{c.lat ? '📍 Pinpointed' : ''}
+                                            </div>
+                                        )}
                                     </div>
                                     <button onClick={() => startEditCompany(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 6, color: T.accent }}>✏️</button>
                                     <button onClick={() => setConfirmDelCompany(c.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 6, color: '#EF4444' }}>🗑️</button>
@@ -1944,10 +2003,13 @@ function isCrossBorder(originLabel, destLabel) {
 }
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
-    const blank = { trip_number: '', trailer_number: '', shipper_name: '', shipper_address: '', receiver_name: '', receiver_address: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '', is_deadhead: false };
+    const blank = { trip_number: '', trailer_number: '', shipper_name: '', shipper_address: '', shipper_postal: '', receiver_name: '', receiver_address: '', receiver_postal: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '', deadhead_name: '', deadhead_address: '', deadhead_postal: '', deadhead_from: '', deadhead_distance: '' };
     const [f, setF] = useState(blank);
     const [oC, setOC] = useState(null);
     const [dC, setDC] = useState(null);
+    const [dhC, setDhC] = useState(null); // coords for deadhead "from" point
+    const [showDeadhead, setShowDeadhead] = useState(false);
+    const [dhDistCalced, setDhDistCalced] = useState(false);
     const [gps, setGps] = useState(false);
     const [distCalced, setDistCalced] = useState(false);
     const [distLoading, setDistLoading] = useState(false);
@@ -1965,14 +2027,17 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
     useEffect(() => {
         if (!visible) return;
         if (editTrip) {
-            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', shipper_name: editTrip.shipper_name || '', shipper_address: editTrip.shipper_address || '', receiver_name: editTrip.receiver_name || '', receiver_address: editTrip.receiver_address || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '', is_deadhead: !!editTrip.is_deadhead });
+            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', shipper_name: editTrip.shipper_name || '', shipper_address: editTrip.shipper_address || '', shipper_postal: editTrip.shipper_postal || '', receiver_name: editTrip.receiver_name || '', receiver_address: editTrip.receiver_address || '', receiver_postal: editTrip.receiver_postal || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '', deadhead_name: editTrip.deadhead_name || '', deadhead_address: editTrip.deadhead_address || '', deadhead_postal: editTrip.deadhead_postal || '', deadhead_from: editTrip.deadhead_from || '', deadhead_distance: String(editTrip.deadhead_distance || '') });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
+            setDhC(editTrip.dh_lat ? { lat: editTrip.dh_lat, lon: editTrip.dh_lon } : null);
+            setShowDeadhead(!!(editTrip.deadhead_from && editTrip.deadhead_from.trim()));
+            setDhDistCalced(!!editTrip.deadhead_distance);
             setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         } else {
             const auto = nextTripNumber(trips || []);
             setF({ ...blank, trip_number: auto });
-            setOC(null); setDC(null); setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
+            setOC(null); setDC(null); setDhC(null); setShowDeadhead(false); setDhDistCalced(false); setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         }
     }, [visible, editTrip]);
 
@@ -2015,7 +2080,15 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         setDistLoading(false);
     }
 
-    const onOS = c => { setOC(c); if (dC) computeDriving(c, dC, selectedBorder); };
+    // Calculates the deadhead leg: from last drop-off point → this trip's origin
+    function computeDeadheadDist(dhCoord, originCoord) {
+        if (!dhCoord || !originCoord) { setDhDistCalced(false); return; }
+        const result = calcDrivingDist(dhCoord.lat, dhCoord.lon, originCoord.lat, originCoord.lon);
+        s('deadhead_distance', result.miles.toFixed(1));
+        setDhDistCalced({ miles: result.miles, km: result.km });
+    }
+
+    const onOS = c => { setOC(c); if (dC) computeDriving(c, dC, selectedBorder); if (dhC) computeDeadheadDist(dhC, c); };
     const onDS = c => { setDC(c); if (oC) computeDriving(oC, c, selectedBorder); };
 
     const distNum = parseFloat(f.distance) || 0;
@@ -2042,13 +2115,15 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         if (!f.origin || !f.destination || !f.pickup_date) { alert('Please fill Origin, Destination, and Pickup Date.'); return; }
         const selectedVehicle = vehicles.find(v => String(v.id) === String(f.vehicle_id));
         onSave({
-            trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), shipper_name: f.shipper_name.trim(), shipper_address: f.shipper_address.trim(), receiver_name: f.receiver_name.trim(), receiver_address: f.receiver_address.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: f.is_deadhead ? 0 : (parseFloat(f.trip_rate) || 0), rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null, is_deadhead: f.is_deadhead,
+            trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), shipper_name: f.shipper_name.trim(), shipper_address: f.shipper_address.trim(), shipper_postal: f.shipper_postal.trim(), receiver_name: f.receiver_name.trim(), receiver_address: f.receiver_address.trim(), receiver_postal: f.receiver_postal.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
+            deadhead_name: showDeadhead ? f.deadhead_name.trim() : '', deadhead_address: showDeadhead ? f.deadhead_address.trim() : '', deadhead_postal: showDeadhead ? f.deadhead_postal.trim() : '', deadhead_from: showDeadhead ? f.deadhead_from.trim() : '', deadhead_distance: showDeadhead ? (parseFloat(f.deadhead_distance) || 0) : 0, dh_lat: showDeadhead ? (dhC?.lat || null) : null, dh_lon: showDeadhead ? (dhC?.lon || null) : null,
             border_crossing: selectedBorder ? selectedBorder.name : null
         });
         // Save companies to the shared database AFTER trip is created —
         // shipper gets the origin city, receiver gets the destination city
-        if (f.shipper_name.trim()) saveCompany(f.shipper_name, f.shipper_address, f.origin);
-        if (f.receiver_name.trim()) saveCompany(f.receiver_name, f.receiver_address, f.destination);
+        if (f.shipper_name.trim()) saveCompany(f.shipper_name, f.shipper_address, f.origin, f.shipper_postal, oC?.lat, oC?.lon);
+        if (f.receiver_name.trim()) saveCompany(f.receiver_name, f.receiver_address, f.destination, f.receiver_postal, dC?.lat, dC?.lon);
+        if (showDeadhead && f.deadhead_name.trim()) saveCompany(f.deadhead_name, f.deadhead_address, f.deadhead_from, f.deadhead_postal, dhC?.lat, dhC?.lon);
     }
 
     const gpsBtn = (field) => (<button onClick={() => gpsGet(field)} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '0 0 8px', marginTop: -4, fontFamily: 'inherit' }}>{gps ? '⏳' : '📍'} Use GPS Location</button>);
@@ -2098,26 +2173,104 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     <button onClick={() => s('trip_number', nextTripNumber(trips || []))} style={{ fontSize: 11, color: T.primary, background: 'none', border: `1px solid ${T.primary}`, borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Use next →</button>
                 </div>
             )}
+
+            {/* ── Optional Deadhead Leg — empty miles before reaching this trip's pickup ── */}
+            {!showDeadhead ? (
+                <button onClick={() => setShowDeadhead(true)}
+                    style={{ width: '100%', background: T.card, border: `1px dashed #94A3B8`, borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 600, color: '#64748B', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span>💨</span> Add deadhead leg (repositioning before this pickup)
+                </button>
+            ) : (
+                <div style={{ background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: '#C2410C', textTransform: 'uppercase', letterSpacing: .5 }}>💨 Deadhead Leg</div>
+                        <button onClick={() => { setShowDeadhead(false); s('deadhead_from', ''); s('deadhead_distance', ''); s('deadhead_name', ''); s('deadhead_address', ''); setDhC(null); setDhDistCalced(false); }}
+                            style={{ fontSize: 11, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✕ Remove</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9A3412', marginBottom: 8, lineHeight: 1.4 }}>
+                        Where you started from before reaching pickup — e.g. your last drop-off customer or yard. Miles here count as empty (no revenue) but still cost fuel.
+                    </div>
+                    {/* Company/yard name — same shared database as Shipper/Receiver */}
+                    <ContactAutoComplete type="deadhead" value={f.deadhead_name} onChange={v => s('deadhead_name', v)}
+                        postal={f.deadhead_postal} onPostalChange={v => s('deadhead_postal', v)}
+                        onSelectCompany={c => {
+                            if (c.postalOnly) {
+                                // Precise pinpoint from postal/ZIP lookup
+                                const label = c.postalCityName + ', ' + c.postalProvince;
+                                s('deadhead_from', label);
+                                const coord = { display: label, lat: c.lat, lon: c.lon };
+                                setDhC(coord); if (oC) computeDeadheadDist(coord, oC);
+                                return;
+                            }
+                            if (c.address) s('deadhead_address', c.address);
+                            if (c.postal) s('deadhead_postal', c.postal);
+                            // Prefer exact lat/lon saved on the company (from a prior postal pin) over city-center guess
+                            if (c.lat && c.lon) {
+                                const label = c.city || c.name;
+                                s('deadhead_from', label);
+                                const coord = { display: label, lat: c.lat, lon: c.lon };
+                                setDhC(coord); if (oC) computeDeadheadDist(coord, oC);
+                            } else if (c.city) {
+                                s('deadhead_from', c.city);
+                                const match = localSearch(c.city)[0];
+                                if (match) { const coord = { display: match.label, lat: match.lat, lon: match.lon }; setDhC(coord); if (oC) computeDeadheadDist(coord, oC); }
+                            }
+                        }}
+                        placeholder="Company / yard name" T={T} />
+                    <div style={{ marginTop: 8 }} />
+                    <input value={f.deadhead_address} onChange={e => s('deadhead_address', e.target.value)} placeholder="Address e.g. 789 Depot Rd"
+                        style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #FDBA74', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', marginBottom: 8 }} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#9A3412', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .4 }}>Starting City</div>
+                    <PlacesAuto value={f.deadhead_from} onChange={v => { s('deadhead_from', v); if (!v) { setDhC(null); setDhDistCalced(false); } }}
+                        placeholder="Search last drop-off / starting city" T={T}
+                        onSelect={c => { setDhC(c); if (oC) computeDeadheadDist(c, oC); }} />
+                    {dhDistCalced && f.deadhead_distance ? (
+                        <div style={{ background: '#FFEDD5', border: '1px solid #FDBA74', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                            <span style={{ fontSize: 14 }}>💨</span>
+                            <div style={{ flex: 1 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#C2410C' }}>{parseFloat(f.deadhead_distance).toFixed(1)} deadhead miles</span>
+                                <span style={{ fontSize: 11, color: '#9A3412', marginLeft: 6 }}>({dhDistCalced.km.toFixed(1)} km)</span>
+                            </div>
+                            <button onClick={() => { setDhDistCalced(false); s('deadhead_distance', ''); }} style={{ background: 'none', border: 'none', color: '#9A3412', cursor: 'pointer', fontSize: 11 }}>Edit</button>
+                        </div>
+                    ) : f.deadhead_from ? (
+                        <input value={f.deadhead_distance} onChange={e => { s('deadhead_distance', e.target.value.replace(/[^0-9.]/g, '')); }}
+                            placeholder="Deadhead miles (auto-fills once origin selected)"
+                            style={{ ...iSt(T), marginTop: 2, marginBottom: 0, fontSize: 13 }} />
+                    ) : null}
+                </div>
+            )}
+
             {/* ── Shipper (pickup contact) ── */}
             <div style={{ background: '#EFF6FF', border: `1px solid #BFDBFE`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#1E40AF', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5, display: 'flex', alignItems: 'center', gap: 5 }}>
                     📤 Shipper
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                    <ContactAutoComplete type="shipper" value={f.shipper_name} onChange={v => s('shipper_name', v)}
-                        onSelectCompany={c => {
-                            if (c.address) s('shipper_address', c.address);
-                            if (c.city) {
-                                s('origin', c.city);
-                                // Try to find matching coords from local database for accurate distance
-                                const match = localSearch(c.city)[0];
-                                if (match) { onOS({ display: match.label, lat: match.lat, lon: match.lon }); }
-                            }
-                        }}
-                        placeholder="Company / contact name" T={T} />
-                    <input value={f.shipper_address} onChange={e => s('shipper_address', e.target.value)} placeholder="Address e.g. 123 John Ave"
-                        style={{ flex: 1, border: '1px solid #BFDBFE', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
-                </div>
+                <ContactAutoComplete type="shipper" value={f.shipper_name} onChange={v => s('shipper_name', v)}
+                    postal={f.shipper_postal} onPostalChange={v => s('shipper_postal', v)}
+                    onSelectCompany={c => {
+                        if (c.postalOnly) {
+                            const label = c.postalCityName + ', ' + c.postalProvince;
+                            s('origin', label);
+                            onOS({ display: label, lat: c.lat, lon: c.lon });
+                            return;
+                        }
+                        if (c.address) s('shipper_address', c.address);
+                        if (c.postal) s('shipper_postal', c.postal);
+                        if (c.lat && c.lon) {
+                            const label = c.city || c.name;
+                            s('origin', label);
+                            onOS({ display: label, lat: c.lat, lon: c.lon });
+                        } else if (c.city) {
+                            s('origin', c.city);
+                            const match = localSearch(c.city)[0];
+                            if (match) { onOS({ display: match.label, lat: match.lat, lon: match.lon }); }
+                        }
+                    }}
+                    placeholder="Company / contact name" T={T} />
+                <div style={{ marginTop: 8 }} />
+                <input value={f.shipper_address} onChange={e => s('shipper_address', e.target.value)} placeholder="Address e.g. 123 John Ave"
+                    style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #BFDBFE', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
             </div>
             <Lbl c="Origin" T={T} />
             <PlacesAuto value={f.origin} onChange={v => { s('origin', v); if (!v) { setOC(null); setDistCalced(false); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onOS} />
@@ -2128,20 +2281,31 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#DC2626', marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5, display: 'flex', alignItems: 'center', gap: 5 }}>
                     📥 Receiver
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                    <ContactAutoComplete type="receiver" value={f.receiver_name} onChange={v => s('receiver_name', v)}
-                        onSelectCompany={c => {
-                            if (c.address) s('receiver_address', c.address);
-                            if (c.city) {
-                                s('destination', c.city);
-                                const match = localSearch(c.city)[0];
-                                if (match) { onDS({ display: match.label, lat: match.lat, lon: match.lon }); }
-                            }
-                        }}
-                        placeholder="Company / contact name" T={T} />
-                    <input value={f.receiver_address} onChange={e => s('receiver_address', e.target.value)} placeholder="Address e.g. 456 Main St"
-                        style={{ flex: 1, border: '1px solid #FECACA', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
-                </div>
+                <ContactAutoComplete type="receiver" value={f.receiver_name} onChange={v => s('receiver_name', v)}
+                    postal={f.receiver_postal} onPostalChange={v => s('receiver_postal', v)}
+                    onSelectCompany={c => {
+                        if (c.postalOnly) {
+                            const label = c.postalCityName + ', ' + c.postalProvince;
+                            s('destination', label);
+                            onDS({ display: label, lat: c.lat, lon: c.lon });
+                            return;
+                        }
+                        if (c.address) s('receiver_address', c.address);
+                        if (c.postal) s('receiver_postal', c.postal);
+                        if (c.lat && c.lon) {
+                            const label = c.city || c.name;
+                            s('destination', label);
+                            onDS({ display: label, lat: c.lat, lon: c.lon });
+                        } else if (c.city) {
+                            s('destination', c.city);
+                            const match = localSearch(c.city)[0];
+                            if (match) { onDS({ display: match.label, lat: match.lat, lon: match.lon }); }
+                        }
+                    }}
+                    placeholder="Company / contact name" T={T} />
+                <div style={{ marginTop: 8 }} />
+                <input value={f.receiver_address} onChange={e => s('receiver_address', e.target.value)} placeholder="Address e.g. 456 Main St"
+                    style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #FECACA', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit' }} />
             </div>
             <Lbl c="Destination" T={T} />
             <PlacesAuto value={f.destination} onChange={v => { s('destination', v); if (!v) { setDC(null); setDistCalced(false); setSelectedBorder(null); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onDS} />
@@ -2215,26 +2379,6 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                 <input value={f.distance} onChange={e => { s('distance', e.target.value.replace(/[^0-9.]/g, '')); setDistCalced(false); }} placeholder="Auto-fills when both cities selected" style={iSt(T)} />
             )}
 
-            {/* ── Loaded vs Deadhead ── */}
-            <Lbl c="Trip Type" T={T} />
-            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-                <button onClick={() => s('is_deadhead', false)}
-                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: `2px solid ${!f.is_deadhead ? '#059669' : T.border}`, background: !f.is_deadhead ? '#ECFDF5' : T.card, cursor: 'pointer', textAlign: 'center' }}>
-                    <div style={{ fontSize: 18 }}>📦</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: !f.is_deadhead ? '#059669' : T.textSec, marginTop: 2 }}>Loaded</div>
-                </button>
-                <button onClick={() => s('is_deadhead', true)}
-                    style={{ flex: 1, padding: '12px 0', borderRadius: 10, border: `2px solid ${f.is_deadhead ? '#DC2626' : T.border}`, background: f.is_deadhead ? '#FEF2F2' : T.card, cursor: 'pointer', textAlign: 'center' }}>
-                    <div style={{ fontSize: 18 }}>💨</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: f.is_deadhead ? '#DC2626' : T.textSec, marginTop: 2 }}>Deadhead</div>
-                </button>
-            </div>
-            <div style={{ fontSize: 11, color: T.textSec, marginBottom: 12, lineHeight: 1.4 }}>
-                {f.is_deadhead
-                    ? '💨 Empty miles repositioning to next pickup — no revenue, still costs fuel.'
-                    : '📦 Hauling freight — revenue-generating loaded miles.'}
-            </div>
-
             {/* ── Pickup & Delivery dates side by side ── */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 0 }}>
                 <div style={{ flex: 1 }}>
@@ -2260,27 +2404,25 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     {TRIP_STATUSES.map(st => { const a = f.status === st; const col = STATUS_COLORS[st] || T.primary; return <button key={st} onClick={() => s('status', st)} style={{ padding: '7px 14px', borderRadius: 20, marginRight: 8, marginBottom: 8, border: `1px solid ${a ? col : T.border}`, background: a ? col : T.card, color: a ? '#fff' : T.textSec, fontWeight: a ? 700 : 400, fontSize: 13, cursor: 'pointer' }}>{st}</button>; })}
                 </div>
             </>)}
-            {!f.is_deadhead ? (<>
-                <Lbl c="Rate Type" T={T} />
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                    <TB on={f.rate_type === 'per_mile'} label="$/mile" onClick={() => s('rate_type', 'per_mile')} T={T} />
-                    <TB on={f.rate_type === 'per_km'} label="$/km" onClick={() => s('rate_type', 'per_km')} T={T} />
-                    <TB on={f.rate_type === 'total'} label="Total Pay" onClick={() => s('rate_type', 'total')} T={T} />
-                </div>
-                <Lbl c={f.rate_type === 'per_mile' ? 'Rate ($/mile)' : f.rate_type === 'per_km' ? 'Rate ($/km)' : 'Total Pay ($)'} T={T} />
-                <input value={f.trip_rate} onChange={e => s('trip_rate', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={iSt(T)} />
-                {rateNum > 0 && distNum > 0 && (
-                    <div style={{ background: T.primary + '18', border: `1px solid ${T.primary}44`, borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5 }}>💰 Earnings Preview</div>
-                        {f.rate_type === 'per_mile' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/mi</span> × <span style={{ fontWeight: 600 }}>{distNum.toFixed(1)} mi</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${earnings.toFixed(2)}</span></div>}
-                        {f.rate_type === 'per_km' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/km</span> × <span style={{ fontWeight: 600 }}>{(distNum * 1.60934).toFixed(1)} km</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${(rateNum * (distNum * 1.60934)).toFixed(2)}</span></div>}
-                        {f.rate_type === 'total' && <div style={{ fontSize: 14, color: T.text }}>Total Pay: <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${rateNum.toFixed(2)}</span>{perMileEarned && <span style={{ fontSize: 12, color: T.textSec, marginLeft: 8 }}>(≈ ${perMileEarned}/mi)</span>}</div>}
-                    </div>
-                )}
-            </>) : (
-                <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', marginBottom: 4 }}>💨 Deadhead — No Revenue</div>
-                    <div style={{ fontSize: 12, color: '#7F1D1D', lineHeight: 1.5 }}>This trip earns $0 and won't count toward revenue. It still logs {distNum > 0 ? distNum.toFixed(1) + ' miles' : 'miles'} against your fuel/maintenance costs — this is what your true cost-per-loaded-mile calculation needs.</div>
+            <Lbl c="Rate Type" T={T} />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <TB on={f.rate_type === 'per_mile'} label="$/mile" onClick={() => s('rate_type', 'per_mile')} T={T} />
+                <TB on={f.rate_type === 'per_km'} label="$/km" onClick={() => s('rate_type', 'per_km')} T={T} />
+                <TB on={f.rate_type === 'total'} label="Total Pay" onClick={() => s('rate_type', 'total')} T={T} />
+            </div>
+            <Lbl c={f.rate_type === 'per_mile' ? 'Rate ($/mile)' : f.rate_type === 'per_km' ? 'Rate ($/km)' : 'Total Pay ($)'} T={T} />
+            <input value={f.trip_rate} onChange={e => s('trip_rate', e.target.value.replace(/[^0-9.]/g, ''))} placeholder="0.00" style={iSt(T)} />
+            {rateNum > 0 && distNum > 0 && (
+                <div style={{ background: T.primary + '18', border: `1px solid ${T.primary}44`, borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.primary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .5 }}>💰 Earnings Preview</div>
+                    {f.rate_type === 'per_mile' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/mi</span> × <span style={{ fontWeight: 600 }}>{distNum.toFixed(1)} mi</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${earnings.toFixed(2)}</span></div>}
+                    {f.rate_type === 'per_km' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/km</span> × <span style={{ fontWeight: 600 }}>{(distNum * 1.60934).toFixed(1)} km</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${(rateNum * (distNum * 1.60934)).toFixed(2)}</span></div>}
+                    {f.rate_type === 'total' && <div style={{ fontSize: 14, color: T.text }}>Total Pay: <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${rateNum.toFixed(2)}</span>{perMileEarned && <span style={{ fontSize: 12, color: T.textSec, marginLeft: 8 }}>(≈ ${perMileEarned}/mi)</span>}</div>}
+                    {f.deadhead_distance && parseFloat(f.deadhead_distance) > 0 && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.primary}33`, fontSize: 12, color: T.textSec }}>
+                            💨 +{parseFloat(f.deadhead_distance).toFixed(1)} deadhead mi · Total trip: <b style={{ color: T.text }}>{(distNum + parseFloat(f.deadhead_distance)).toFixed(1)} mi</b>
+                        </div>
+                    )}
                 </div>
             )}
             <Lbl c="Currency" T={T} />
@@ -2394,7 +2536,11 @@ function Dashboard({ trips, expenses, navigate }) {
 
     const tEx = useMemo(() => expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
     const completedTrips = useMemo(() => trips.filter(t => t.status === 'Completed'), [trips]);
-    const tMiRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [completedTrips]);
+    // Loaded miles = each trip's main distance (origin→destination)
+    const loadedMilesRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [completedTrips]);
+    // Deadhead miles = the optional repositioning leg attached to each trip
+    const deadheadMilesRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.deadhead_distance) || 0), 0), [completedTrips]);
+    const tMiRaw = loadedMilesRaw + deadheadMilesRaw; // total miles driven, loaded + deadhead combined
     const tMi = useKm ? (tMiRaw * 1.60934) : tMiRaw;
     const tRev = useMemo(() => completedTrips.reduce((s, t) => s + calcTripRevenue(t), 0), [completedTrips]);
     const tFuel = useMemo(() => expenses.filter(e => e.expense_type === 'Fuel').reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), [expenses]);
@@ -2403,10 +2549,6 @@ function Dashboard({ trips, expenses, navigate }) {
     const tProfit = tRev - tEx;
 
     // Loaded vs Deadhead breakdown — the real cost-per-mile metric
-    const loadedTrips = useMemo(() => completedTrips.filter(t => !t.is_deadhead), [completedTrips]);
-    const deadheadTrips = useMemo(() => completedTrips.filter(t => t.is_deadhead), [completedTrips]);
-    const loadedMilesRaw = useMemo(() => loadedTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [loadedTrips]);
-    const deadheadMilesRaw = useMemo(() => deadheadTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [deadheadTrips]);
     const loadedMiles = useKm ? (loadedMilesRaw * 1.60934) : loadedMilesRaw;
     const deadheadMiles = useKm ? (deadheadMilesRaw * 1.60934) : deadheadMilesRaw;
     const deadheadPct = tMiRaw > 0 ? ((deadheadMilesRaw / tMiRaw) * 100) : 0;
@@ -2707,7 +2849,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter, onSaveTrip 
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                                             <span style={{ background: 'rgba(255,255,255,.25)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, marginLeft: 8, whiteSpace: 'nowrap', letterSpacing: .3 }}>{trip.status || 'Active'}</span>
-                                            {trip.is_deadhead && <span style={{ background: 'rgba(0,0,0,.25)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap' }}>💨 Deadhead</span>}
+                                            {trip.deadhead_distance > 0 && <span style={{ background: 'rgba(0,0,0,.25)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap' }}>💨 +{parseFloat(trip.deadhead_distance).toFixed(0)}mi</span>}
                                         </div>
                                     </div>
                                     <div style={{ padding: 14 }}>
@@ -2886,6 +3028,17 @@ function TripDetail({ tripId, trips, expenses, setExpenses, pods, setPods, goBac
                             {d.receiver_address && <div style={{ fontSize: 11, color: '#DC2626', marginTop: 2 }}>📍 {d.receiver_address}</div>}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ── Deadhead leg info ── */}
+            {d.deadhead_from && d.deadhead_distance > 0 && (
+                <div style={{ margin: '8px 16px 0', background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 12, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#C2410C', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>💨 Deadhead Leg (before pickup)</div>
+                    {d.deadhead_name && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B' }}>{d.deadhead_name}</div>}
+                    {d.deadhead_address && <div style={{ fontSize: 12, color: '#C2410C', marginTop: 1 }}>📍 {d.deadhead_address}</div>}
+                    <div style={{ fontSize: 13, color: '#1E293B', marginTop: 4 }}>{d.deadhead_from} → {d.origin}</div>
+                    <div style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>{parseFloat(d.deadhead_distance).toFixed(1)} empty miles · no revenue</div>
                 </div>
             )}
             {/* ── Summary bar ── */}
