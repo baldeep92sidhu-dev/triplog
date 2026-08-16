@@ -2003,13 +2003,16 @@ function isCrossBorder(originLabel, destLabel) {
 }
 function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }) {
     const { useKm } = useT();
-    const blank = { trip_number: '', trailer_number: '', shipper_name: '', shipper_address: '', shipper_postal: '', receiver_name: '', receiver_address: '', receiver_postal: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '', deadhead_name: '', deadhead_address: '', deadhead_postal: '', deadhead_from: '', deadhead_distance: '' };
+    const blank = { trip_number: '', trailer_number: '', shipper_name: '', shipper_address: '', shipper_postal: '', receiver_name: '', receiver_address: '', receiver_postal: '', origin: '', destination: '', distance: '', pickup_date: '', delivery_date: '', notes: '', status: 'Scheduled', trip_rate: '', rate_type: 'per_mile', currency: 'CAD', vehicle_id: '', deadhead_name: '', deadhead_address: '', deadhead_postal: '', deadhead_from: '', deadhead_distance: '', deadhead2_name: '', deadhead2_address: '', deadhead2_postal: '', deadhead2_to: '', deadhead2_distance: '' };
     const [f, setF] = useState(blank);
     const [oC, setOC] = useState(null);
     const [dC, setDC] = useState(null);
-    const [dhC, setDhC] = useState(null); // coords for deadhead "from" point
+    const [dhC, setDhC] = useState(null); // coords for deadhead "from" point (before pickup)
     const [showDeadhead, setShowDeadhead] = useState(false);
     const [dhDistCalced, setDhDistCalced] = useState(false);
+    const [dh2C, setDh2C] = useState(null); // coords for deadhead "to" point (after delivery)
+    const [showDeadhead2, setShowDeadhead2] = useState(false);
+    const [dh2DistCalced, setDh2DistCalced] = useState(false);
     const [gps, setGps] = useState(false);
     const [distCalced, setDistCalced] = useState(false);
     const [distLoading, setDistLoading] = useState(false);
@@ -2027,17 +2030,20 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
     useEffect(() => {
         if (!visible) return;
         if (editTrip) {
-            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', shipper_name: editTrip.shipper_name || '', shipper_address: editTrip.shipper_address || '', shipper_postal: editTrip.shipper_postal || '', receiver_name: editTrip.receiver_name || '', receiver_address: editTrip.receiver_address || '', receiver_postal: editTrip.receiver_postal || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '', deadhead_name: editTrip.deadhead_name || '', deadhead_address: editTrip.deadhead_address || '', deadhead_postal: editTrip.deadhead_postal || '', deadhead_from: editTrip.deadhead_from || '', deadhead_distance: String(editTrip.deadhead_distance || '') });
+            setF({ trip_number: editTrip.trip_number || '', trailer_number: editTrip.trailer_number || '', shipper_name: editTrip.shipper_name || '', shipper_address: editTrip.shipper_address || '', shipper_postal: editTrip.shipper_postal || '', receiver_name: editTrip.receiver_name || '', receiver_address: editTrip.receiver_address || '', receiver_postal: editTrip.receiver_postal || '', origin: editTrip.origin || '', destination: editTrip.destination || '', distance: String(editTrip.distance || ''), pickup_date: editTrip.pickup_date || editTrip.trip_date || '', delivery_date: editTrip.delivery_date || '', notes: editTrip.notes || '', status: editTrip.status || 'In Progress', trip_rate: String(editTrip.trip_rate || ''), rate_type: editTrip.rate_type || 'per_mile', currency: editTrip.currency || 'CAD', vehicle_id: editTrip.vehicle_id || '', deadhead_name: editTrip.deadhead_name || '', deadhead_address: editTrip.deadhead_address || '', deadhead_postal: editTrip.deadhead_postal || '', deadhead_from: editTrip.deadhead_from || '', deadhead_distance: String(editTrip.deadhead_distance || ''), deadhead2_name: editTrip.deadhead2_name || '', deadhead2_address: editTrip.deadhead2_address || '', deadhead2_postal: editTrip.deadhead2_postal || '', deadhead2_to: editTrip.deadhead2_to || '', deadhead2_distance: String(editTrip.deadhead2_distance || '') });
             setOC(editTrip.origin_lat ? { lat: editTrip.origin_lat, lon: editTrip.origin_lon } : null);
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
             setDhC(editTrip.dh_lat ? { lat: editTrip.dh_lat, lon: editTrip.dh_lon } : null);
             setShowDeadhead(!!(editTrip.deadhead_from && editTrip.deadhead_from.trim()));
             setDhDistCalced(!!editTrip.deadhead_distance);
+            setDh2C(editTrip.dh2_lat ? { lat: editTrip.dh2_lat, lon: editTrip.dh2_lon } : null);
+            setShowDeadhead2(!!(editTrip.deadhead2_to && editTrip.deadhead2_to.trim()));
+            setDh2DistCalced(!!editTrip.deadhead2_distance);
             setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         } else {
             const auto = nextTripNumber(trips || []);
             setF({ ...blank, trip_number: auto });
-            setOC(null); setDC(null); setDhC(null); setShowDeadhead(false); setDhDistCalced(false); setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
+            setOC(null); setDC(null); setDhC(null); setShowDeadhead(false); setDhDistCalced(false); setDh2C(null); setShowDeadhead2(false); setDh2DistCalced(false); setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         }
     }, [visible, editTrip]);
 
@@ -2088,8 +2094,16 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         setDhDistCalced({ miles: result.miles, km: result.km });
     }
 
+    // Calculates the deadhead leg: from this trip's destination → next pickup point
+    function computeDeadhead2Dist(destCoord, dh2Coord) {
+        if (!destCoord || !dh2Coord) { setDh2DistCalced(false); return; }
+        const result = calcDrivingDist(destCoord.lat, destCoord.lon, dh2Coord.lat, dh2Coord.lon);
+        s('deadhead2_distance', result.miles.toFixed(1));
+        setDh2DistCalced({ miles: result.miles, km: result.km });
+    }
+
     const onOS = c => { setOC(c); if (dC) computeDriving(c, dC, selectedBorder); if (dhC) computeDeadheadDist(dhC, c); };
-    const onDS = c => { setDC(c); if (oC) computeDriving(oC, c, selectedBorder); };
+    const onDS = c => { setDC(c); if (oC) computeDriving(oC, c, selectedBorder); if (dh2C) computeDeadhead2Dist(c, dh2C); };
 
     const distNum = parseFloat(f.distance) || 0;
     const rateNum = parseFloat(f.trip_rate) || 0;
@@ -2117,6 +2131,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         onSave({
             trip_number: f.trip_number.trim(), trailer_number: f.trailer_number.trim(), shipper_name: f.shipper_name.trim(), shipper_address: f.shipper_address.trim(), shipper_postal: f.shipper_postal.trim(), receiver_name: f.receiver_name.trim(), receiver_address: f.receiver_address.trim(), receiver_postal: f.receiver_postal.trim(), origin: f.origin, destination: f.destination, distance: parseFloat(f.distance) || 0, pickup_date: f.pickup_date, delivery_date: f.delivery_date, trip_date: f.pickup_date, notes: f.notes, status: f.status, trip_rate: parseFloat(f.trip_rate) || 0, rate_type: f.rate_type, currency: f.currency, vehicle_id: f.vehicle_id, vehicle_label: selectedVehicle ? `${selectedVehicle.unit_number} — ${selectedVehicle.vehicle_type}` : '', origin_lat: oC?.lat || null, origin_lon: oC?.lon || null, dest_lat: dC?.lat || null, dest_lon: dC?.lon || null,
             deadhead_name: showDeadhead ? f.deadhead_name.trim() : '', deadhead_address: showDeadhead ? f.deadhead_address.trim() : '', deadhead_postal: showDeadhead ? f.deadhead_postal.trim() : '', deadhead_from: showDeadhead ? f.deadhead_from.trim() : '', deadhead_distance: showDeadhead ? (parseFloat(f.deadhead_distance) || 0) : 0, dh_lat: showDeadhead ? (dhC?.lat || null) : null, dh_lon: showDeadhead ? (dhC?.lon || null) : null,
+            deadhead2_name: showDeadhead2 ? f.deadhead2_name.trim() : '', deadhead2_address: showDeadhead2 ? f.deadhead2_address.trim() : '', deadhead2_postal: showDeadhead2 ? f.deadhead2_postal.trim() : '', deadhead2_to: showDeadhead2 ? f.deadhead2_to.trim() : '', deadhead2_distance: showDeadhead2 ? (parseFloat(f.deadhead2_distance) || 0) : 0, dh2_lat: showDeadhead2 ? (dh2C?.lat || null) : null, dh2_lon: showDeadhead2 ? (dh2C?.lon || null) : null,
             border_crossing: selectedBorder ? selectedBorder.name : null
         });
         // Save companies to the shared database AFTER trip is created —
@@ -2124,6 +2139,7 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
         if (f.shipper_name.trim()) saveCompany(f.shipper_name, f.shipper_address, f.origin, f.shipper_postal, oC?.lat, oC?.lon);
         if (f.receiver_name.trim()) saveCompany(f.receiver_name, f.receiver_address, f.destination, f.receiver_postal, dC?.lat, dC?.lon);
         if (showDeadhead && f.deadhead_name.trim()) saveCompany(f.deadhead_name, f.deadhead_address, f.deadhead_from, f.deadhead_postal, dhC?.lat, dhC?.lon);
+        if (showDeadhead2 && f.deadhead2_name.trim()) saveCompany(f.deadhead2_name, f.deadhead2_address, f.deadhead2_to, f.deadhead2_postal, dh2C?.lat, dh2C?.lon);
     }
 
     const gpsBtn = (field) => (<button onClick={() => gpsGet(field)} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '0 0 8px', marginTop: -4, fontFamily: 'inherit' }}>{gps ? '⏳' : '📍'} Use GPS Location</button>);
@@ -2311,6 +2327,71 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             <PlacesAuto value={f.destination} onChange={v => { s('destination', v); if (!v) { setDC(null); setDistCalced(false); setSelectedBorder(null); } }} placeholder="Search address or city (Canada/USA)" T={T} onSelect={onDS} />
             {gpsBtn('destination')}
 
+            {/* ── Optional Deadhead Leg AFTER delivery — empty miles to next pickup ── */}
+            {!showDeadhead2 ? (
+                <button onClick={() => setShowDeadhead2(true)}
+                    style={{ width: '100%', background: T.card, border: `1px dashed #94A3B8`, borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 600, color: '#64748B', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span>💨</span> Add deadhead leg (repositioning after this delivery)
+                </button>
+            ) : (
+                <div style={{ background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: '#C2410C', textTransform: 'uppercase', letterSpacing: .5 }}>💨 Deadhead Leg (after delivery)</div>
+                        <button onClick={() => { setShowDeadhead2(false); s('deadhead2_to', ''); s('deadhead2_distance', ''); s('deadhead2_name', ''); s('deadhead2_address', ''); setDh2C(null); setDh2DistCalced(false); }}
+                            style={{ fontSize: 11, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>✕ Remove</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9A3412', marginBottom: 8, lineHeight: 1.4 }}>
+                        Where you're heading next after this delivery — e.g. your next pickup customer or yard. Empty miles, still costs fuel.
+                    </div>
+                    {/* Company/yard name — same shared database as Shipper/Receiver/Deadhead */}
+                    <ContactAutoComplete type="deadhead" value={f.deadhead2_name} onChange={v => s('deadhead2_name', v)}
+                        postal={f.deadhead2_postal} onPostalChange={v => s('deadhead2_postal', v)}
+                        onSelectCompany={c => {
+                            if (c.postalOnly) {
+                                const label = c.postalCityName + ', ' + c.postalProvince;
+                                s('deadhead2_to', label);
+                                const coord = { display: label, lat: c.lat, lon: c.lon };
+                                setDh2C(coord); if (dC) computeDeadhead2Dist(dC, coord);
+                                return;
+                            }
+                            if (c.address) s('deadhead2_address', c.address);
+                            if (c.postal) s('deadhead2_postal', c.postal);
+                            if (c.lat && c.lon) {
+                                const label = c.city || c.name;
+                                s('deadhead2_to', label);
+                                const coord = { display: label, lat: c.lat, lon: c.lon };
+                                setDh2C(coord); if (dC) computeDeadhead2Dist(dC, coord);
+                            } else if (c.city) {
+                                s('deadhead2_to', c.city);
+                                const match = localSearch(c.city)[0];
+                                if (match) { const coord = { display: match.label, lat: match.lat, lon: match.lon }; setDh2C(coord); if (dC) computeDeadhead2Dist(dC, coord); }
+                            }
+                        }}
+                        placeholder="Company / yard name" T={T} />
+                    <div style={{ marginTop: 8 }} />
+                    <input value={f.deadhead2_address} onChange={e => s('deadhead2_address', e.target.value)} placeholder="Address e.g. 789 Depot Rd"
+                        style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #FDBA74', borderRadius: 7, padding: '8px 10px', fontSize: 13, color: T.text, background: T.card, outline: 'none', fontFamily: 'inherit', marginBottom: 8 }} />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#9A3412', marginBottom: 4, textTransform: 'uppercase', letterSpacing: .4 }}>Next City</div>
+                    <PlacesAuto value={f.deadhead2_to} onChange={v => { s('deadhead2_to', v); if (!v) { setDh2C(null); setDh2DistCalced(false); } }}
+                        placeholder="Search next pickup / heading-to city" T={T}
+                        onSelect={c => { setDh2C(c); if (dC) computeDeadhead2Dist(dC, c); }} />
+                    {dh2DistCalced && f.deadhead2_distance ? (
+                        <div style={{ background: '#FFEDD5', border: '1px solid #FDBA74', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                            <span style={{ fontSize: 14 }}>💨</span>
+                            <div style={{ flex: 1 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: '#C2410C' }}>{parseFloat(f.deadhead2_distance).toFixed(1)} deadhead miles</span>
+                                <span style={{ fontSize: 11, color: '#9A3412', marginLeft: 6 }}>({dh2DistCalced.km.toFixed(1)} km)</span>
+                            </div>
+                            <button onClick={() => { setDh2DistCalced(false); s('deadhead2_distance', ''); }} style={{ background: 'none', border: 'none', color: '#9A3412', cursor: 'pointer', fontSize: 11 }}>Edit</button>
+                        </div>
+                    ) : f.deadhead2_to ? (
+                        <input value={f.deadhead2_distance} onChange={e => { s('deadhead2_distance', e.target.value.replace(/[^0-9.]/g, '')); }}
+                            placeholder="Deadhead miles (auto-fills once destination selected)"
+                            style={{ ...iSt(T), marginTop: 2, marginBottom: 0, fontSize: 13 }} />
+                    ) : null}
+                </div>
+            )}
+
             {/* ── Border Crossing — auto-shown when cross-border trip detected ── */}
             {oC && dC && isCrossBorder(f.origin, f.destination) && (
                 <div style={{ marginBottom: 12 }}>
@@ -2418,11 +2499,13 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
                     {f.rate_type === 'per_mile' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/mi</span> × <span style={{ fontWeight: 600 }}>{distNum.toFixed(1)} mi</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${earnings.toFixed(2)}</span></div>}
                     {f.rate_type === 'per_km' && <div style={{ fontSize: 14, color: T.text }}><span style={{ fontWeight: 600 }}>${rateNum}/km</span> × <span style={{ fontWeight: 600 }}>{(distNum * 1.60934).toFixed(1)} km</span> = <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${(rateNum * (distNum * 1.60934)).toFixed(2)}</span></div>}
                     {f.rate_type === 'total' && <div style={{ fontSize: 14, color: T.text }}>Total Pay: <span style={{ fontSize: 17, fontWeight: 800, color: T.primary }}>${rateNum.toFixed(2)}</span>{perMileEarned && <span style={{ fontSize: 12, color: T.textSec, marginLeft: 8 }}>(≈ ${perMileEarned}/mi)</span>}</div>}
-                    {f.deadhead_distance && parseFloat(f.deadhead_distance) > 0 && (
+                    {(f.deadhead_distance && parseFloat(f.deadhead_distance) > 0) || (f.deadhead2_distance && parseFloat(f.deadhead2_distance) > 0) ? (
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.primary}33`, fontSize: 12, color: T.textSec }}>
-                            💨 +{parseFloat(f.deadhead_distance).toFixed(1)} deadhead mi · Total trip: <b style={{ color: T.text }}>{(distNum + parseFloat(f.deadhead_distance)).toFixed(1)} mi</b>
+                            {f.deadhead_distance && parseFloat(f.deadhead_distance) > 0 && <div>💨 +{parseFloat(f.deadhead_distance).toFixed(1)} mi deadhead (before pickup)</div>}
+                            {f.deadhead2_distance && parseFloat(f.deadhead2_distance) > 0 && <div>💨 +{parseFloat(f.deadhead2_distance).toFixed(1)} mi deadhead (after delivery)</div>}
+                            <div style={{ marginTop: 4 }}>Total trip: <b style={{ color: T.text }}>{(distNum + (parseFloat(f.deadhead_distance) || 0) + (parseFloat(f.deadhead2_distance) || 0)).toFixed(1)} mi</b></div>
                         </div>
-                    )}
+                    ) : null}
                 </div>
             )}
             <Lbl c="Currency" T={T} />
@@ -2539,7 +2622,7 @@ function Dashboard({ trips, expenses, navigate }) {
     // Loaded miles = each trip's main distance (origin→destination)
     const loadedMilesRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.distance) || 0), 0), [completedTrips]);
     // Deadhead miles = the optional repositioning leg attached to each trip
-    const deadheadMilesRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.deadhead_distance) || 0), 0), [completedTrips]);
+    const deadheadMilesRaw = useMemo(() => completedTrips.reduce((s, t) => s + (parseFloat(t.deadhead_distance) || 0) + (parseFloat(t.deadhead2_distance) || 0), 0), [completedTrips]);
     const tMiRaw = loadedMilesRaw + deadheadMilesRaw; // total miles driven, loaded + deadhead combined
     const tMi = useKm ? (tMiRaw * 1.60934) : tMiRaw;
     const tRev = useMemo(() => completedTrips.reduce((s, t) => s + calcTripRevenue(t), 0), [completedTrips]);
@@ -2849,7 +2932,7 @@ function Trips({ trips, setTrips, navigate, vehicles, initialFilter, onSaveTrip 
                                         </div>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                                             <span style={{ background: 'rgba(255,255,255,.25)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 10, marginLeft: 8, whiteSpace: 'nowrap', letterSpacing: .3 }}>{trip.status || 'Active'}</span>
-                                            {trip.deadhead_distance > 0 && <span style={{ background: 'rgba(0,0,0,.25)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap' }}>💨 +{parseFloat(trip.deadhead_distance).toFixed(0)}mi</span>}
+                                            {((trip.deadhead_distance > 0) || (trip.deadhead2_distance > 0)) && <span style={{ background: 'rgba(0,0,0,.25)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8, whiteSpace: 'nowrap' }}>💨 +{((parseFloat(trip.deadhead_distance) || 0) + (parseFloat(trip.deadhead2_distance) || 0)).toFixed(0)}mi</span>}
                                         </div>
                                     </div>
                                     <div style={{ padding: 14 }}>
@@ -3031,7 +3114,7 @@ function TripDetail({ tripId, trips, expenses, setExpenses, pods, setPods, goBac
                 </div>
             )}
 
-            {/* ── Deadhead leg info ── */}
+            {/* ── Deadhead leg info (before pickup) ── */}
             {d.deadhead_from && d.deadhead_distance > 0 && (
                 <div style={{ margin: '8px 16px 0', background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 12, padding: '10px 12px' }}>
                     <div style={{ fontSize: 10, fontWeight: 800, color: '#C2410C', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>💨 Deadhead Leg (before pickup)</div>
@@ -3039,6 +3122,16 @@ function TripDetail({ tripId, trips, expenses, setExpenses, pods, setPods, goBac
                     {d.deadhead_address && <div style={{ fontSize: 12, color: '#C2410C', marginTop: 1 }}>📍 {d.deadhead_address}</div>}
                     <div style={{ fontSize: 13, color: '#1E293B', marginTop: 4 }}>{d.deadhead_from} → {d.origin}</div>
                     <div style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>{parseFloat(d.deadhead_distance).toFixed(1)} empty miles · no revenue</div>
+                </div>
+            )}
+            {/* ── Deadhead leg info (after delivery) ── */}
+            {d.deadhead2_to && d.deadhead2_distance > 0 && (
+                <div style={{ margin: '8px 16px 0', background: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 12, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#C2410C', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>💨 Deadhead Leg (after delivery)</div>
+                    {d.deadhead2_name && <div style={{ fontSize: 13, fontWeight: 700, color: '#1E293B' }}>{d.deadhead2_name}</div>}
+                    {d.deadhead2_address && <div style={{ fontSize: 12, color: '#C2410C', marginTop: 1 }}>📍 {d.deadhead2_address}</div>}
+                    <div style={{ fontSize: 13, color: '#1E293B', marginTop: 4 }}>{d.destination} → {d.deadhead2_to}</div>
+                    <div style={{ fontSize: 12, color: '#9A3412', marginTop: 2 }}>{parseFloat(d.deadhead2_distance).toFixed(1)} empty miles · no revenue</div>
                 </div>
             )}
             {/* ── Summary bar ── */}
