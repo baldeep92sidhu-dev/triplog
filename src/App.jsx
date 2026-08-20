@@ -29,8 +29,15 @@ const STATUS_COLORS = { Scheduled: '#7C3AED', 'In Progress': '#F59E0B', Complete
 const US_STATES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'];
 const CA_PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
 const TOLLS = [
+    { name: 'Peace Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
+    { name: 'Rainbow Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
+    { name: 'Lewiston-Queenston Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
+    { name: 'Thousand Islands Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
+    { name: 'Ambassador Bridge (MI-ON)', state: 'MI', country: 'USA', border: 'Canada' },
+    { name: 'Bluewater Bridge (MI-ON)', state: 'MI', country: 'USA', border: 'Canada' },
     { name: 'Golden Gate Bridge (CA)', state: 'CA', country: 'USA' },
     { name: 'George Washington Bridge (NY)', state: 'NY', country: 'USA' },
+    { name: 'Gordie Howe Bridge (MI-ON)', state: 'MI', country: 'USA', border: 'Canada' },
     { name: 'Lincoln Tunnel (NY)', state: 'NY', country: 'USA' },
     { name: 'Holland Tunnel (NY)', state: 'NY', country: 'USA' },
     { name: 'Verrazano-Narrows Bridge (NY)', state: 'NY', country: 'USA' },
@@ -39,12 +46,7 @@ const TOLLS = [
     { name: 'Indiana Toll Road (IN)', state: 'IN', country: 'USA' },
     { name: 'Illinois Tollway (IL)', state: 'IL', country: 'USA' },
     { name: 'Ohio Turnpike (OH)', state: 'OH', country: 'USA' },
-    { name: 'Peace Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
-    { name: 'Rainbow Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
-    { name: 'Lewiston-Queenston Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
-    { name: 'Thousand Islands Bridge (NY-ON)', state: 'NY', country: 'USA', border: 'Canada' },
-    { name: 'Ambassador Bridge (MI-ON)', state: 'MI', country: 'USA', border: 'Canada' },
-    { name: 'Bluewater Bridge (MI-ON)', state: 'MI', country: 'USA', border: 'Canada' },
+   
     { name: 'Trans-Canada Highway (401)', province: 'ON', country: 'Canada' },
     { name: 'Deerfoot Trail', province: 'AB', country: 'Canada' },
     { name: 'Confederation Bridge (PE)', province: 'PE', country: 'Canada' },
@@ -2035,10 +2037,10 @@ function AddTripModal({ visible, onClose, onSave, editTrip, T, vehicles, trips }
             setDC(editTrip.dest_lat ? { lat: editTrip.dest_lat, lon: editTrip.dest_lon } : null);
             setDhC(editTrip.dh_lat ? { lat: editTrip.dh_lat, lon: editTrip.dh_lon } : null);
             setShowDeadhead(!!(editTrip.deadhead_from && editTrip.deadhead_from.trim()));
-            setDhDistCalced(!!editTrip.deadhead_distance);
+            setDhDistCalced(editTrip.deadhead_distance ? { miles: parseFloat(editTrip.deadhead_distance) || 0, km: (parseFloat(editTrip.deadhead_distance) || 0) * 1.60934 } : false);
             setDh2C(editTrip.dh2_lat ? { lat: editTrip.dh2_lat, lon: editTrip.dh2_lon } : null);
             setShowDeadhead2(!!(editTrip.deadhead2_to && editTrip.deadhead2_to.trim()));
-            setDh2DistCalced(!!editTrip.deadhead2_distance);
+            setDh2DistCalced(editTrip.deadhead2_distance ? { miles: parseFloat(editTrip.deadhead2_distance) || 0, km: (parseFloat(editTrip.deadhead2_distance) || 0) * 1.60934 } : false);
             setDistCalced(false); setDupWarning(false); setSelectedBorder(null); setBorderSearch('');
         } else {
             const auto = nextTripNumber(trips || []);
